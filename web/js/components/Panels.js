@@ -52,7 +52,7 @@ export function Drawer() {
   <nav class="drawer" aria-label="Menu">
     <div class="row" style="padding:12px 12px 8px"><${Orb} size=${34} /><b class="serif grow" style="font-size:var(--fs-xl);font-weight:500">${s.settings?.agent?.name || 'Covo'}</b>
       <button class="icon-btn" aria-label=${t('Close')} onClick=${close}><${Icon} name="x" /></button></div>
-    <div style="padding:0 12px 8px"><div class="composer" style="padding:2px 8px"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;border:0;outline:0;background:transparent;height:34px" /></div></div>
+    <div style="padding:0 12px 8px"><div class="composer" style="padding:2px 8px;align-items:center"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;border:0;outline:0;background:transparent;height:34px" /></div></div>
     <div class="scroll" style="flex:1;min-height:0">
       ${r ? html`<div style="padding:0 8px"><${SearchResults} r=${r} done=${close} /></div>` : html`
       ${s.provider === 'demo' && html`<div style="margin:4px 12px 8px;padding:12px;border-radius:var(--r-md);background:var(--accent-soft)">
@@ -86,7 +86,7 @@ export function Sidebar() {
   return html`<aside class="d-side">
     <div class="brand"><${Orb} /><b class="grow">${s.settings?.agent?.name || 'Covo'}</b>
       ${s.provider === 'demo' && html`<button class="badge warn" onClick=${() => setUI({ settings: 'model' })} title=${t('Connect a model')}>${t('Demo mode')}</button>`}</div>
-    <div style="padding:0 10px 6px"><div class="composer" style="padding:0 8px;box-shadow:none;border-radius:var(--r-md)"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;min-width:0;border:0;outline:0;background:transparent;height:34px;font-size:var(--fs-md)" /></div></div>
+    <div style="padding:0 10px 6px"><div class="composer" style="padding:0 8px;box-shadow:none;border-radius:var(--r-md);align-items:center"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;min-width:0;border:0;outline:0;background:transparent;height:34px;font-size:var(--fs-md)" /></div></div>
     <div class="scroll" style="flex:1;min-height:0">
       ${r ? html`<div style="padding:0 8px"><${SearchResults} r=${r} done=${() => setQ('')} /></div>` : html`
       <div class="nav">
