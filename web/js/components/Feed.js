@@ -1,4 +1,4 @@
-import { html, useRef, useEffect, useLayoutEffect, useMemo } from '../../vendor/preact-htm.js';
+import { html, useRef, useEffect, useLayoutEffect, useMemo, useState } from '../../vendor/preact-htm.js';
 import { useStore, setUI, get } from '../store.js';
 import { renderMarkdown, splitBubbles, escapeHtml } from '../lib/md.js';
 import { Icon } from '../lib/icons.js';
@@ -8,6 +8,25 @@ import { api } from '../api.js';
 import { toast } from '../store.js';
 import { sendMessage } from './Composer.js';
 import { ApprovalCard, ArtifactCard, EmailCard, TaskMini } from './Cards.js';
+import { TopicMenu, organize, fmtUntil } from './Topics.js';
+
+// Shown above the feed when you open one topic: status, Working, and quick Settle / Snooze.
+function TopicHeader({ topic }) {
+  const [menu, setMenu] = useState(false);
+  const settled = !!(topic.settledAt || topic.settlePending);
+  return html`<div class="topic-head">
+    <span class="pill"><${StatusIcon} status=${topic.status} emoji=${topic.emoji} working=${topic.working} />${topic.title}
+      ${topic.working && html`<span class="working-label">${t('Working')}</span>`}
+      ${topic.snoozedUntil && html`<span class="muted xs">${t('Snoozed until')} ${fmtUntil(topic.snoozedUntil)}</span>`}
+      ${topic.settledAt && html`<span class="muted xs">${t('Settled')}</span>`}
+      <button class="icon-btn sm" aria-label=${t('Clear filter')} onClick=${() => setUI({ topicFilter: null })}><${Icon} name="x" size="sm" /></button></span>
+    <span class="topic-head-actions">
+      <button class="btn outline sm" onClick=${() => organize(topic, settled ? 'unsettle' : 'settle')}><${Icon} name=${settled ? 'history' : 'checkCircle'} size="sm" />${settled ? t('Unsettle') : topic.working ? t('Settle when done') : t('Settle')}</button>
+      <span style="position:relative"><button class="btn outline sm" aria-haspopup="menu" onClick=${() => setMenu(!menu)}><${Icon} name="clock" size="sm" />${topic.snoozedUntil ? t('Snoozed') : t('Snooze')}</button>
+        ${menu && html`<${TopicMenu} topic=${topic} onClose=${() => setMenu(false)} align="center" />`}</span>
+    </span>
+  </div>`;
+}
 
 const STATUS_HTML = {
   done: '<span class="st done"><svg viewBox="0 0 24 24" class="icon"><path d="M20 6 9 17l-5-5"/></svg></span>',
@@ -30,7 +49,7 @@ const chip = (label) => {
 
 function TopicTag({ topic }) {
   return html`<div class="topic-tag" onClick=${() => setUI({ topicFilter: topic.id })} title=${topic.title}>
-    <${StatusIcon} status=${topic.status} emoji=${topic.emoji} /><span>${topic.title}</span>
+    <${StatusIcon} status=${topic.status} emoji=${topic.emoji} working=${topic.working} /><span>${topic.title}</span>
   </div>`;
 }
 
@@ -161,7 +180,7 @@ export function Feed({ variant = 'm' }) {
   const greet = hour < 12 ? t('Good morning') : hour < 18 ? t('Good afternoon') : t('Good evening');
   return html`<div class=${cx(variant === 'd' ? 'd-scroll' : 'm-scroll', 'scroll')} ref=${scroller} onClick=${onClick}>
     <div class=${cx('feed', variant === 'd' && 'd-center')} style="flex:1;display:flex;flex-direction:column">
-      ${ft && html`<div class="row" style="justify-content:center;margin:0 0 8px"><span class="pill"><${StatusIcon} status=${ft.status} emoji=${ft.emoji} />${ft.title}<button class="icon-btn sm" aria-label=${t('Clear filter')} onClick=${() => setUI({ topicFilter: null })}><${Icon} name="x" size="sm" /></button></span></div>`}
+      ${ft && html`<${TopicHeader} topic=${ft} />`}
       ${!items.length && !busy ? html`<div class="empty-feed">
           <h2>${greet}${name ? `, ${name.split(' ')[0]}` : ''}.</h2>
           <div>${t('Ask {name} anything, or give it a job.', { name: agentName })}</div>

@@ -1,4 +1,5 @@
-import { db } from './db.js';
+import { db, wakeSnoozedTopics } from './db.js';
+import { notify } from './notify.js';
 import { getSettings } from './config.js';
 import { log } from './util.js';
 import { runRoutine, expireApprovals } from './agent/core.js';
@@ -26,6 +27,7 @@ function tick() {
       runRoutine(r);
     }
     expireApprovals();
+    for (const t of wakeSnoozedTopics()) notify({ title: t.title, body: 'Snooze is over. This topic is back in your list.', kind: 'task', url: '/?tab=chat' });
   } catch (e) {
     log.error('scheduler', e);
   }

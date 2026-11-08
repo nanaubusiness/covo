@@ -5,7 +5,7 @@ import os from 'node:os';
 import { Router, readJsonBody, readBody, send, parseCookies, clientIp, MIME } from './http.js';
 import { DATA_DIR, ROOT, id, now, log } from './util.js';
 import * as A from './auth.js';
-import { db, save, readArtifact, deleteArtifact, publicTask, upsertTask, replaceDb, resetDb, flush } from './db.js';
+import { db, save, readArtifact, deleteArtifact, publicTask, upsertTask, replaceDb, resetDb, flush, organizeTopic } from './db.js';
 import { broadcast } from './bus.js';
 import { getSettings, publicSettings, updateSettings, activeProvider, replaceSettings, resetSettings, DEFAULT_SETTINGS } from './config.js';
 import { listDevices, disconnectDevice } from './devices.js';
@@ -162,6 +162,14 @@ r.patch('/api/topics/:id', async (req, res, p) => {
   if (!t) throw err(404, 'Not found');
   for (const k of ['title', 'emoji', 'status', 'archived']) if (b[k] !== undefined) t[k] = b[k];
   t.updatedAt = now(); save(); broadcast('topic.update', t);
+  send(res, 200, t);
+});
+
+// Settle / snooze / unread, like T3 Code threads. Body: { action, until? } (until: ms timestamp or ISO date).
+r.post('/api/topics/:id/organize', async (req, res, p) => {
+  const b = await readJsonBody(req);
+  const t = organizeTopic(p.id, b.action, { until: b.until });
+  if (!t) throw err(404, 'Not found');
   send(res, 200, t);
 });
 
