@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { useStore, setUI, mutate, toast, get } from '../store.js';
 import { cx } from './ui.js';
 import { saveSettings } from './settings/common.js';
+import { transcriptOf, isAndroid } from '../lib/speech.js';
 
 // Model + effort right under the message box (like T3 Code), for Claude plan / Claude API.
 const MODELS = [
@@ -73,6 +74,7 @@ export function Composer({ autoFocus }) {
   const ta = useRef();
   const fileIn = useRef();
   const rec = useRef();
+  const stopped = useRef(false);
   const busy = ['thinking', 'writing', 'working'].includes(agentState);
 
   useEffect(() => {
@@ -94,7 +96,7 @@ export function Composer({ autoFocus }) {
     if (!text.trim() && !atts.length) return;
     sendMessage(text, atts);
     setText(''); setAtts([]);
-    rec.current?.stop();
+    stopped.current = true; rec.current?.stop();
   };
   const onKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && layout === 'desktop') { e.preventDefault(); submit(); }
@@ -116,15 +118,27 @@ export function Composer({ autoFocus }) {
   };
   const dictate = () => {
     if (!SR) { toast({ title: t('Dictate'), body: 'Speech recognition is not supported in this browser. Try Chrome, Edge or Safari.' }); return; }
-    if (dictating) { rec.current?.stop(); return; }
-    const r = new SR();
-    r.lang = getLang() === 'ar' ? 'ar-IQ' : navigator.language || 'en-US';
-    r.interimResults = true; r.continuous = true;
-    const base = text ? text + ' ' : '';
-    r.onresult = (ev) => { let s = ''; for (const res of ev.results) s += res[0].transcript; setText(base + s); };
-    r.onend = () => setDictating(false);
-    r.onerror = () => setDictating(false);
-    rec.current = r; r.start(); setDictating(true);
+    if (dictating) { stopped.current = true; rec.current?.stop(); return; }
+    // Android's "continuous" mode is buggy (repeats itself), so there we listen in short sessions
+    // and quietly start the next one until you tap the mic again.
+    const android = isAndroid();
+    stopped.current = false;
+    let base = text.trim() ? text.trimEnd() + ' ' : '';
+    let heard = '';
+    const start = () => {
+      const r = new SR();
+      r.lang = getLang() === 'ar' ? 'ar-IQ' : navigator.language || 'en-US';
+      r.interimResults = true; r.continuous = !android;
+      r.onresult = (ev) => { heard = transcriptOf(ev.results); setText(base + heard); };
+      r.onend = () => {
+        if (heard) { base = (base + heard).trimEnd() + ' '; heard = ''; }
+        if (android && !stopped.current) { try { start(); return; } catch {} }
+        setDictating(false);
+      };
+      r.onerror = (e) => { if (!(android && e.error === 'no-speech')) stopped.current = true; };
+      rec.current = r; r.start();
+    };
+    start(); setDictating(true);
   };
 
   const hasContent = text.trim() || atts.length;

@@ -10,6 +10,7 @@ import { TaskRow, groupOf } from './Tasks.js';
 import { sendMessage } from './Composer.js';
 import { saveSettings } from './settings/common.js';
 import { needsCount } from '../needs.js';
+import { transcriptOf } from '../lib/speech.js';
 import { TopicList } from './Topics.js';
 export { TopicList };
 
@@ -187,7 +188,7 @@ export function VoiceMode() {
     r.lang = lang === 'ar' ? 'ar-IQ' : navigator.language || 'en-US';
     r.interimResults = true; r.continuous = false;
     let finalText = '';
-    r.onresult = (ev) => { let s = ''; for (const res of ev.results) { s += res[0].transcript; if (res.isFinal) finalText = s; } setCap(s); };
+    r.onresult = (ev) => { const s = transcriptOf(ev.results); if ([...ev.results].some((x) => x.isFinal)) finalText = s; setCap(s); };
     r.onend = () => {
       if (finalText.trim()) { setPhase('thinking'); sentAt.current = Date.now(); sendMessage(finalText.trim()); }
       else if (phase !== 'ended') setTimeout(() => recRef.current === r && listen(), 300);
