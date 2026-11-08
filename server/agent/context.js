@@ -18,7 +18,7 @@ export function buildContext() {
   const tasks = db.data.tasks.filter((t) => !['done', 'cancelled'].includes(t.status) || Date.now() - t.updatedAt < 86400_000).slice(0, 15);
   if (tasks.length) {
     L.push('Tasks:');
-    for (const t of tasks) L.push(`- ${t.id} "${t.title}" ${t.status}${t.progress ? ` ${t.progress.done}/${t.progress.total}` : ''}${t.note ? ` — ${truncate(t.note, 140)}` : ''}${t.question ? ` — waiting for answer: ${truncate(t.question, 160)}` : ''}`);
+    for (const t of tasks) L.push(`- ${t.id} "${t.title}"${t.mode === 'chat' ? ' [separate chat]' : ''} ${t.status}${t.progress ? ` ${t.progress.done}/${t.progress.total}` : ''}${t.note ? ` — ${truncate(t.note, 140)}` : ''}${t.question ? ` — waiting for answer: ${truncate(t.question, 160)}` : ''}`);
   }
 
   const pending = db.data.approvals.filter((a) => a.status === 'pending');
@@ -38,6 +38,13 @@ export function buildContext() {
 
   const routines = db.data.routines.filter((r) => r.enabled);
   if (routines.length) L.push('Routines: ' + routines.map((r) => `${r.id} "${r.title}" at ${r.time}`).join('; '));
+
+  const watchers = (db.data.watchers || []).filter((w) => w.enabled !== false);
+  if (watchers.length) {
+    L.push('Watchers (check these at check-ins and for the morning brief):');
+    for (const w of watchers) L.push(`- ${w.id} "${w.title}" [${w.kind || 'other'}] target: ${w.target}${w.how ? ` · how: ${truncate(w.how, 200)}` : ''}${w.notify_when ? ` · tell the user when: ${truncate(w.notify_when, 160)}` : ''}\n  last state${w.lastChecked ? ` (${fmtTime(w.lastChecked, tz)})` : ''}: ${w.state ? truncate(w.state, 400) : 'none yet'}`);
+  } else L.push('Watchers: none yet. If you have not asked before, ask once which social accounts and sites to keep an eye on, then add them with watch.');
+  if (db.data.meta?.lastCheckin) L.push(`Last check-in: ${fmtTime(db.data.meta.lastCheckin, tz)}`);
 
   if (db.data.memory.length) {
     L.push('Memory:');

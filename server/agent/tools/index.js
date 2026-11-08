@@ -6,6 +6,7 @@ import { resolveTarget, runOnDevice, deviceName, listDevices } from '../../devic
 import { notify } from '../../notify.js';
 import { sendEmail, emailConfigured } from '../../email.js';
 import { mcpTools } from '../../mcp.js';
+import { computerSupported, computerAction, computerGranted, grantComputer } from '../computer.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool registry. Each tool: { name, description, input_schema, category, run(input) }
@@ -219,6 +220,51 @@ function coreTools(ctx) {
     });
   }
 
+  if (b.watchers !== false) {
+    tools.push({
+      name: 'watch',
+      description: 'Start (or update) keeping an eye on something during check-ins: a social media account, a website, a search for mentions, a metric. Each check-in you look at every watcher, compare with its saved state and only tell the user about real changes.',
+      input_schema: obj({
+        title: str('Short name, e.g. "YouTube: Lessicon" or "Mentions of my app"'),
+        kind: str('social | website | search | metric | other', { enum: ['social', 'website', 'search', 'metric', 'other'] }),
+        target: str('What to look at: profile URL / handle, page URL, or search query'),
+        how: str('How to check it, e.g. "Open YouTube Studio analytics on the Mac (computer use) and read views, subs and top Shorts for the last 48h" or "web_search for new reviews"'),
+        notify_when: str('What counts as worth telling the user, e.g. "a video passes 1k views, a comment needs a reply, follower count drops"'),
+        id: str('Watcher id to update instead of creating a new one'),
+      }, ['title', 'target']),
+      category: 'auto',
+      run: async (i) => {
+        let w = i.id && db.data.watchers.find((x) => x.id === i.id);
+        if (!w) { w = { id: id('w_'), enabled: true, createdAt: now(), state: '', lastChecked: null }; db.data.watchers.push(w); }
+        for (const k of ['title', 'kind', 'target', 'how', 'notify_when']) if (i[k] !== undefined) w[k] = i[k];
+        w.updatedAt = now(); save(); broadcast('watchers', db.data.watchers);
+        return { ok: true, id: w.id, note: 'It will be checked at every check-in. Take a first look now and save a baseline with update_watch_state.' };
+      },
+    });
+    tools.push({
+      name: 'update_watch_state',
+      description: 'Save what a watcher looks like right now (numbers, latest items, anything you need to spot changes next time). Call after every look, even if nothing changed.',
+      input_schema: obj({ id: str('Watcher id'), state: str('Compact snapshot, e.g. "subs 1,204; views 48h 3.1k; top: \"exam tomorrow\" 1.2k; 3 unanswered comments"'), changed: bool('True if something worth telling the user changed') }, ['id', 'state']),
+      category: 'auto',
+      run: async ({ id: wid, state, changed }) => {
+        const w = db.data.watchers.find((x) => x.id === wid);
+        if (!w) return { error: 'No such watcher' };
+        if (w.state && w.state !== state) w.previousState = w.state;
+        w.state = truncate(state, 1500); w.lastChecked = now();
+        if (changed) w.lastChange = now();
+        save(); broadcast('watchers', db.data.watchers);
+        return { ok: true };
+      },
+    });
+    tools.push({
+      name: 'unwatch',
+      description: 'Stop watching something (watcher id).',
+      input_schema: obj({ id: str('Watcher id') }, ['id']),
+      category: 'auto',
+      run: async ({ id: wid }) => { db.data.watchers = db.data.watchers.filter((w) => w.id !== wid); save(); broadcast('watchers', db.data.watchers); return { ok: true }; },
+    });
+  }
+
   if (b.notify) {
     tools.push({
       name: 'notify',
@@ -278,6 +324,26 @@ function systemTools() {
     tools.push({ name: 'system_info', description: 'Get OS, user, memory and uptime of a device. Also lists all devices.', input_schema: obj({ ...deviceProp }), category: 'auto', run: async (i) => ({ devices: listDevices().map((d) => ({ id: d.id, name: d.name, online: d.online, enabled: d.enabled, platform: d.platform })), ...(resolveTarget(i.device) ? await onDevice('system_info')(i) : {}) }) });
     tools.push({ name: 'desktop_notify', description: 'Show a desktop notification on a device.', input_schema: obj({ title: str('Title'), body: str('Body'), ...deviceProp }, ['body']), category: 'auto', run: onDevice('desktop_notify') });
   }
+  if (b.computer !== false && computerSupported() && s.tools.serverExecution) tools.push({
+    name: 'computer',
+    description: 'Use the Mac that runs you, like a person: see the screen and use the mouse and keyboard. The user is signed in to their apps and sites in their browser, so this is how you check social media dashboards (YouTube Studio, TikTok, Instagram, X…), analytics and anything without an API. Start with action "screenshot". Coordinates are pixels in the latest screenshot. Every action returns a new screenshot. Prefer keyboard shortcuts (cmd+l to focus the address bar, then type a URL and press return). Act on the user\'s behalf with good judgment, within what their instructions allow. When done, leave windows as you found them where practical.',
+    input_schema: obj({
+      action: str('screenshot | click | double_click | right_click | move | drag | scroll | type | key | wait | cursor', { enum: ['screenshot', 'click', 'double_click', 'right_click', 'move', 'drag', 'scroll', 'type', 'key', 'wait', 'cursor'] }),
+      x: num('X in screenshot pixels (click/move/drag start/scroll position)'),
+      y: num('Y in screenshot pixels'),
+      x2: num('Drag end X'), y2: num('Drag end Y'),
+      text: str('Text to type (action "type")'),
+      keys: str('Key or combo, e.g. "return", "cmd+l", "cmd+shift+t", "pagedown". Several separated by spaces run in order.'),
+      direction: str('Scroll direction: up | down | left | right'),
+      amount: num('Scroll steps (default 5)'),
+      seconds: num('Wait time for action "wait" (max 10)'),
+      purpose: str('What you are doing on the computer (shown when asking permission)'),
+    }, ['action']),
+    // One approval opens a 30-minute session; asking for every click would be unusable.
+    category: () => (computerGranted() ? 'auto' : 'computer'),
+    summarize: (i) => ({ title: 'Use your Mac for the next 30 minutes', detail: i.purpose || 'See the screen and use the mouse and keyboard' }),
+    run: async (i) => { grantComputer(30); return computerAction(i); },
+  });
   if (b.http) tools.push({
     name: 'http_request',
     description: 'Make an HTTP request from the server (APIs, webhooks). GET runs freely; other methods need approval. For reading web pages prefer web_fetch if available.',

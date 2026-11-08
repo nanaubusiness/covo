@@ -12,6 +12,7 @@ import { listDevices, disconnectDevice } from './devices.js';
 import { mcpStatus, reloadMcp } from './mcp.js';
 import { vapidPublicKey, addPushSub, removePushSub, notify } from './notify.js';
 import { emailConfigured } from './email.js';
+import { transcribe, transcribeAvailable } from './transcribe.js';
 import { renderSystemPrompt, PRESETS, promptTemplate } from './agent/prompt.js';
 import { CATEGORIES } from './agent/policy.js';
 import * as core from './agent/core.js';
@@ -44,7 +45,9 @@ const r = router;
 
 /* ───────────── auth (public) ───────────── */
 // Desktop app (desktop/main.cjs): the app window signs itself in with a per-launch key.
-const DESKTOP_KEY = process.env.COVO_DESKTOP_KEY || '';
+// Desktop sign-in key: from the in-process desktop app, or (for a desktop app attaching to an
+// always-on server on the same computer) from DATA_DIR/desktop.key, readable only by this user.
+const DESKTOP_KEY = process.env.COVO_DESKTOP_KEY || (() => { try { return fs.readFileSync(path.join(DATA_DIR, 'desktop.key'), 'utf8').trim(); } catch { return ''; } })();
 const isDesktopReq = (req) => !!DESKTOP_KEY && !!authFromReq(req)?.session?.desktop;
 
 r.get('/api/auth/status', (req, res) => send(res, 200, { setup: A.isSetup(), authed: !!authFromReq(req), version: VERSION, appName: getSettings().agent.name || 'Covo', desktop: isDesktopReq(req), hasPassword: A.hasPassword() }), { public: true });
@@ -94,7 +97,7 @@ function ensureSeeded() {
     (db.data.meta ||= {}).seeded = true;
     if (activeProvider() === 'demo' && !db.data.feed.length) demo.seed();
     if (!db.data.routines.some((x) => /brief/i.test(x.title))) {
-      db.data.routines.push({ id: id('r_'), title: 'Morning brief', prompt: 'Check every active topic and task, update anything stale, then send my morning brief.', time: '07:00', days: [0, 1, 2, 3, 4, 5, 6], enabled: true, mode: 'main', createdAt: now(), lastRun: null });
+      db.data.routines.push({ id: id('r_'), title: 'Morning brief', prompt: 'Look at every watcher (social accounts first) and save fresh snapshots, check every active topic and task, update anything stale, search the web for anything important for my work today, then send my morning brief.', time: '07:00', days: [0, 1, 2, 3, 4, 5, 6], enabled: true, mode: 'main', createdAt: now(), lastRun: null });
     }
     save();
   }
@@ -114,6 +117,9 @@ export function bootstrap() {
     approvals: db.data.approvals.filter((a) => a.status === 'pending' || now() - (a.updatedAt || a.createdAt) < 7 * 86400_000),
     memory: db.data.memory,
     routines: db.data.routines,
+    watchers: db.data.watchers || [],
+    transcribe: transcribeAvailable(),
+    lastCheckin: db.data.meta?.lastCheckin || null,
     devices: listDevices(),
     mcp: mcpStatus(),
     usage: db.data.usage,
@@ -165,6 +171,42 @@ r.patch('/api/topics/:id', async (req, res, p) => {
   send(res, 200, t);
 });
 
+/* ───────────── voice → text (Whisper on this computer) ───────────── */
+r.post('/api/transcribe', async (req, res) => {
+  const buf = await readBody(req, 50 * 1024 * 1024);
+  if (!buf.length) throw err(400, 'No audio');
+  const t0 = Date.now();
+  const text = await transcribe(buf);
+  send(res, 200, { text, ms: Date.now() - t0 });
+});
+
+/* ───────────── watchers & check-ins ───────────── */
+r.post('/api/checkin', (req, res) => {
+  if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to run check-ins.');
+  send(res, 200, core.runCheckin({ force: true }));
+});
+r.post('/api/watchers', async (req, res) => {
+  const b = await readJsonBody(req);
+  if (!b.title || !b.target) throw err(400, 'title and target are required');
+  const w = { id: id('w_'), enabled: true, createdAt: now(), updatedAt: now(), state: '', lastChecked: null };
+  for (const k of ['title', 'kind', 'target', 'how', 'notify_when']) if (b[k] !== undefined) w[k] = b[k];
+  (db.data.watchers ||= []).push(w); save(); broadcast('watchers', db.data.watchers);
+  send(res, 200, w);
+});
+r.patch('/api/watchers/:id', async (req, res, p) => {
+  const b = await readJsonBody(req);
+  const w = (db.data.watchers || []).find((x) => x.id === p.id);
+  if (!w) throw err(404, 'Not found');
+  for (const k of ['title', 'target', 'how', 'notify_when', 'enabled']) if (b[k] !== undefined) w[k] = b[k];
+  w.updatedAt = now(); save(); broadcast('watchers', db.data.watchers);
+  send(res, 200, w);
+});
+r.delete('/api/watchers/:id', (req, res, p) => {
+  db.data.watchers = (db.data.watchers || []).filter((x) => x.id !== p.id);
+  save(); broadcast('watchers', db.data.watchers);
+  send(res, 200, { ok: true });
+});
+
 // Settle / snooze / unread, like T3 Code threads. Body: { action, until? } (until: ms timestamp or ISO date).
 r.post('/api/topics/:id/organize', async (req, res, p) => {
   const b = await readJsonBody(req);
@@ -184,6 +226,12 @@ r.post('/api/tasks', async (req, res) => {
   if (!b.title || !b.goal) throw err(400, 'title and goal are required');
   if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to run real tasks.');
   send(res, 200, core.tasks.createTask({ title: b.title, goal: b.goal, total: b.total }, { scope: 'user' }));
+});
+r.post('/api/chats', async (req, res) => {
+  const b = await readJsonBody(req);
+  if (!b.message?.trim()) throw err(400, 'message is required');
+  if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to start chats.');
+  send(res, 200, publicTask(core.tasks.createChat({ message: b.message.trim(), title: b.title })));
 });
 r.post('/api/tasks/:id/action', async (req, res, p) => {
   const b = await readJsonBody(req);

@@ -11,3 +11,4 @@ mobile/node_modules/
 mobile/android/keystore.properties
 *.jks
 *.keystore
+mobile/android/.gradle-truststore/

@@ -5,8 +5,9 @@ import { api } from '../api.js';
 import { useStore, setUI, toast } from '../store.js';
 import { Seg, StatusIcon, Sheet, ago, fmtTime, cx, Confirm } from './ui.js';
 import { ApprovalCard } from './Cards.js';
+import { openChat } from './Chat.js';
 
-export const groupOf = (t) => (t.status === 'needs_you' ? 'needs' : ['done', 'cancelled', 'failed'].includes(t.status) ? 'done' : 'progress');
+export const groupOf = (t) => (t.status === 'needs_you' ? 'needs' : t.mode === 'chat' ? 'chat' : ['done', 'cancelled', 'failed'].includes(t.status) ? 'done' : 'progress');
 const STATUS_LABEL = { running: 'In progress', queued: 'Queued', needs_you: 'Needs you', done: 'Done', failed: 'Failed', cancelled: 'Cancelled', paused: 'Paused' };
 const BADGE = { running: 'info', queued: 'no', needs_you: 'warn', done: 'ok', failed: 'bad', cancelled: 'no', paused: 'no' };
 
@@ -14,7 +15,7 @@ export function TaskRow({ task }) {
   const topic = useStore((s) => s.topics.find((x) => x.id === task.topicId));
   const g = groupOf(task);
   const pct = task.progress?.total ? Math.round((task.progress.done / task.progress.total) * 100) : null;
-  return html`<button class="trow" onClick=${() => setUI({ task: task.id, panel: 'task' })}>
+  return html`<button class="trow" onClick=${() => openChat(task.id)}>
     <div class="h"><${StatusIcon} status=${g === 'needs' ? 'needs_you' : g === 'done' ? 'done' : 'in_progress'} emoji=${topic?.emoji} /><b>${task.title}</b><span class="when">${ago(task.updatedAt)}</span></div>
     ${topic && topic.title !== task.title && html`<div class="topic">${topic.title}</div>`}
     ${task.note && html`<div class="note">${task.note}</div>`}
@@ -23,7 +24,7 @@ export function TaskRow({ task }) {
 }
 
 export function TasksView() {
-  const tasks = useStore((s) => s.tasks);
+  const tasks = useStore((s) => s.tasks.filter((x) => x.mode !== 'chat'));
   const provider = useStore((s) => s.provider);
   const [seg, setSeg] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -106,7 +107,7 @@ export function TaskDetail({ id, asPanel, onClose }) {
       ${task.status === 'paused' && html`<button class="btn outline sm" onClick=${() => act('resume')}><${Icon} name="play" size="sm" />${t('Resume')}</button>`}
       ${task.status === 'failed' && html`<button class="btn outline sm" onClick=${() => act('retry')}><${Icon} name="refresh" size="sm" />${t('Retry')}</button>`}
       ${!['done', 'cancelled', 'failed'].includes(task.status) && html`<button class="btn ghost sm" onClick=${() => act('cancel')}>${t('Cancel')}</button>`}
-      <button class="btn ghost sm" onClick=${() => { setUI({ topicFilter: task.topicId, tab: 'chat' }); close(); }}><${Icon} name="chat" size="sm" />${t('Open in chat')}</button>
+      <button class="btn ghost sm" onClick=${() => { openChat(id); close(); }}><${Icon} name="chat" size="sm" />${t('Open chat')}</button>
       <span class="grow"></span>
       <button class="icon-btn" aria-label=${t('Delete')} onClick=${() => setConfirm(true)}><${Icon} name="trash" size="sm" /></button>
     </div>

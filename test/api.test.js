@@ -83,3 +83,13 @@ test('login rate limiting', async () => {
   for (let i = 0; i < 5; i++) await s.req('POST', '/api/auth/login', { password: 'wrong' });
   assert.equal((await s.req('POST', '/api/auth/login', { password: 'wrong' })).status, 429);
 });
+
+test('transcribe: empty audio is rejected', async () => {
+  const { startServer } = await import('./helpers.js');
+  const s = await startServer();
+  try {
+    await s.req('POST', '/api/auth/setup', { password: 'secret123', name: 'Sara' });
+    const r = await s.req('POST', '/api/transcribe', undefined, { 'Content-Type': 'audio/webm' });
+    assert.equal(r.status, 400);
+  } finally { await s.stop(); }
+});

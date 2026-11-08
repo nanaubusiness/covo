@@ -10,7 +10,9 @@ import { TaskRow, groupOf } from './Tasks.js';
 import { sendMessage } from './Composer.js';
 import { saveSettings } from './settings/common.js';
 import { needsCount } from '../needs.js';
+import { transcriptOf } from '../lib/speech.js';
 import { TopicList } from './Topics.js';
+import { ChatList } from './Chat.js';
 export { TopicList };
 
 /* ───────────── shared: search ───────────── */
@@ -47,22 +49,23 @@ export function Drawer() {
   const close = () => setUI({ drawer: false });
   const needs = needsCount(s);
   const online = s.devices.filter((d) => d.online && d.enabled).length;
-  const nav = (tab) => () => { setUI({ tab, drawer: false, topicFilter: null }); };
+  const nav = (tab) => () => { setUI({ tab, drawer: false, topicFilter: null, chat: null }); };
   return html`<div class="overlay" onClick=${close}></div>
   <nav class="drawer" aria-label="Menu">
     <div class="row" style="padding:12px 12px 8px"><${Orb} size=${34} /><b class="serif grow" style="font-size:var(--fs-xl);font-weight:500">${s.settings?.agent?.name || 'Covo'}</b>
       <button class="icon-btn" aria-label=${t('Close')} onClick=${close}><${Icon} name="x" /></button></div>
-    <div style="padding:0 12px 8px"><div class="composer" style="padding:2px 8px"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;border:0;outline:0;background:transparent;height:34px" /></div></div>
+    <div style="padding:0 12px 8px"><div class="composer" style="padding:2px 8px;align-items:center"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;border:0;outline:0;background:transparent;height:34px" /></div></div>
     <div class="scroll" style="flex:1;min-height:0">
       ${r ? html`<div style="padding:0 8px"><${SearchResults} r=${r} done=${close} /></div>` : html`
       ${s.provider === 'demo' && html`<div style="margin:4px 12px 8px;padding:12px;border-radius:var(--r-md);background:var(--accent-soft)">
         <b style="font-size:var(--fs-sm)">${t('Demo mode')}</b><div class="hint" style="color:var(--ink-2);margin:2px 0 8px">You're watching a scripted demo. Connect Claude to run your own agent.</div>
         <button class="btn primary sm" onClick=${() => setUI({ drawer: false, settings: 'model' })}>${t('Connect a model')}</button></div>`}
       <div class="nav">
-        <button class=${s.ui.tab === 'chat' ? 'on' : ''} onClick=${nav('chat')}><${Icon} name="chat" />${t('Chat')}</button>
+        <button class=${s.ui.tab === 'chat' && !s.ui.chat ? 'on' : ''} onClick=${nav('chat')}><${Icon} name="chat" />${t('Chat')}</button>
         <button class=${s.ui.tab === 'tasks' ? 'on' : ''} onClick=${nav('tasks')}><${Icon} name="tasks" />${t('Tasks')}${needs > 0 && html`<span class="count">${needs}</span>`}</button>
         <button class=${s.ui.tab === 'make' ? 'on' : ''} onClick=${nav('make')}><${Icon} name="make" />${t('Make')}</button>
       </div>
+      <div class="side-sec"><h4>${t('Chats')}</h4><${ChatList} onPick=${close} /></div>
       <div class="side-sec"><h4>${t('Topics')}</h4><${TopicList} onPick=${close} /></div>
       <div class="side-sec"><h4>${t('Routines')}</h4>
         ${s.routines.map((x) => html`<button class="topic-item" onClick=${() => setUI({ drawer: false, settings: 'routines' })}><${Icon} name="clock" size="sm" /><span class="t">${x.title}</span><span class="muted" style="font-size:var(--fs-xs)">${x.enabled ? x.time : 'off'}</span></button>`)}
@@ -86,14 +89,15 @@ export function Sidebar() {
   return html`<aside class="d-side">
     <div class="brand"><${Orb} /><b class="grow">${s.settings?.agent?.name || 'Covo'}</b>
       ${s.provider === 'demo' && html`<button class="badge warn" onClick=${() => setUI({ settings: 'model' })} title=${t('Connect a model')}>${t('Demo mode')}</button>`}</div>
-    <div style="padding:0 10px 6px"><div class="composer" style="padding:0 8px;box-shadow:none;border-radius:var(--r-md)"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;min-width:0;border:0;outline:0;background:transparent;height:34px;font-size:var(--fs-md)" /></div></div>
+    <div style="padding:0 10px 6px"><div class="composer" style="padding:0 8px;box-shadow:none;border-radius:var(--r-md);align-items:center"><${Icon} name="search" size="sm" cls="muted" /><input value=${q} onInput=${(e) => setQ(e.target.value)} placeholder=${t('Search')} style="flex:1;min-width:0;border:0;outline:0;background:transparent;height:34px;font-size:var(--fs-md)" /></div></div>
     <div class="scroll" style="flex:1;min-height:0">
       ${r ? html`<div style="padding:0 8px"><${SearchResults} r=${r} done=${() => setQ('')} /></div>` : html`
       <div class="nav">
-        <button class=${s.ui.tab === 'chat' ? 'on' : ''} onClick=${() => setUI({ tab: 'chat', topicFilter: null })}><${Icon} name="chat" />${t('Chat')}</button>
+        <button class=${s.ui.tab === 'chat' && !s.ui.chat ? 'on' : ''} onClick=${() => setUI({ tab: 'chat', topicFilter: null, chat: null })}><${Icon} name="chat" />${t('Chat')}</button>
         <button class=${s.ui.tab === 'tasks' ? 'on' : ''} onClick=${() => setUI({ tab: 'tasks' })}><${Icon} name="tasks" />${t('Tasks')}${needs > 0 && html`<span class="count">${needs}</span>`}</button>
         <button class=${s.ui.tab === 'make' ? 'on' : ''} onClick=${() => setUI({ tab: 'make' })}><${Icon} name="make" />${t('Make')}</button>
       </div>
+      <div class="side-sec"><h4>${t('Chats')}</h4><${ChatList} /></div>
       <div class="side-sec"><h4>${t('Topics')}</h4><${TopicList} /></div>
       <div class="side-sec"><h4>${t('Routines')}<button class="icon-btn sm" aria-label="Edit routines" onClick=${() => setUI({ settings: 'routines' })}><${Icon} name="plus" size="sm" /></button></h4>
         ${s.routines.map((x) => html`<button class="topic-item" onClick=${() => setUI({ settings: 'routines' })}><${Icon} name="clock" size="sm" /><span class="t">${x.title}</span><span class="muted" style="font-size:var(--fs-xs)">${x.enabled ? x.time : 'off'}</span></button>`)}
@@ -187,7 +191,7 @@ export function VoiceMode() {
     r.lang = lang === 'ar' ? 'ar-IQ' : navigator.language || 'en-US';
     r.interimResults = true; r.continuous = false;
     let finalText = '';
-    r.onresult = (ev) => { let s = ''; for (const res of ev.results) { s += res[0].transcript; if (res.isFinal) finalText = s; } setCap(s); };
+    r.onresult = (ev) => { const s = transcriptOf(ev.results); if ([...ev.results].some((x) => x.isFinal)) finalText = s; setCap(s); };
     r.onend = () => {
       if (finalText.trim()) { setPhase('thinking'); sentAt.current = Date.now(); sendMessage(finalText.trim()); }
       else if (phase !== 'ended') setTimeout(() => recRef.current === r && listen(), 300);

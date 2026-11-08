@@ -89,7 +89,8 @@ export const SERVER_KEY = 'covo:serverUrl';
 export async function maybeOpenServer() {
   const q = new URLSearchParams(location.search);
   if (q.get('disconnect')) { localStorage.removeItem(SERVER_KEY); history.replaceState(null, '', location.pathname); return false; }
-  const saved = localStorage.getItem(SERVER_KEY);
+  // A build can ship with a default server (COVO_DEFAULT_SERVER), e.g. your own always-on Mac.
+  const saved = localStorage.getItem(SERVER_KEY) || window.COVO_DEFAULT_SERVER || '';
   if (!saved) return false;
   try {
     await Promise.race([fetch(saved.replace(/\/$/, '') + '/api/auth/status', { mode: 'no-cors' }), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]);

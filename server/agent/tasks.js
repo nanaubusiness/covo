@@ -4,7 +4,7 @@ import { bus, broadcast } from '../bus.js';
 import { id, log } from '../util.js';
 import { notify } from '../notify.js';
 import { runLoop } from './loop.js';
-import { renderSystemPrompt, TASK_ADDENDUM } from './prompt.js';
+import { renderSystemPrompt, TASK_ADDENDUM, CHAT_ADDENDUM } from './prompt.js';
 import { buildContext } from './context.js';
 
 // Background tasks: each one is its own agent loop with its own transcript.
@@ -23,6 +23,16 @@ export function initTasks(h) {
   setTimeout(schedule, 2000);
 }
 
+// A "chat" is a task that stays open: a separate Duet conversation you talk to directly,
+// running alongside the main thread. Its replies stay in the chat (no report to main).
+export function createChat({ message, title }) {
+  const name = (title || message || 'New chat').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const task = upsertTask({ title: name, goal: message, mode: 'chat', topicId: null, status: 'queued', progress: null, note: 'Thinking…', origin: 'user' });
+  addTaskStep(task, { kind: 'user', text: message });
+  setTimeout(schedule, 10);
+  return task;
+}
+
 export function createTask({ title, goal, topic, total }, ctx = {}) {
   let tp = null;
   if (topic) tp = upsertTopic({ title: topic, status: 'in_progress' });
@@ -36,7 +46,8 @@ export function createTask({ title, goal, topic, total }, ctx = {}) {
 
 export function schedule() {
   if (activeProvider() === 'demo') return;
-  const max = getSettings().agent.maxConcurrentTasks || 3;
+  // No cap on parallel tasks/chats unless one is set (0 or empty = unlimited).
+  const max = Number(getSettings().agent.maxConcurrentTasks) > 0 ? Number(getSettings().agent.maxConcurrentTasks) : Infinity;
   const queued = db.data.tasks.filter((t) => t.status === 'queued' && !t.demo).reverse();
   for (const t of queued) {
     if (running.size >= max) break;
@@ -49,13 +60,14 @@ async function run(task) {
   const ac = new AbortController();
   running.set(task.id, { abort: ac });
   upsertTask({ id: task.id, status: 'running', question: null });
-  setTopicStatus(task.topicId, 'in_progress');
+  if (task.topicId) setTopicStatus(task.topicId, 'in_progress');
   const notes = inbox.get(task.id) || [];
   inbox.delete(task.id);
   const first = task.transcript.length === 0;
   const blocks = [{ type: 'text', text: buildContext() }];
-  if (first) blocks.push({ type: 'text', text: `Start the task now.\nTask: ${task.title}\nGoal: ${task.goal}` });
-  for (const n of notes) { blocks.push({ type: 'text', text: `<event>${n.text}</event>` }); if (n.blocks) blocks.push(...n.blocks); }
+  const chat = task.mode === 'chat';
+  if (first) blocks.push({ type: 'text', text: chat ? task.goal : `Start the task now.\nTask: ${task.title}\nGoal: ${task.goal}` });
+  for (const n of notes) { blocks.push({ type: 'text', text: chat && n.user ? n.user : `<event>${n.text}</event>` }); if (n.blocks) blocks.push(...n.blocks); }
   if (!first && !notes.length) blocks.push({ type: 'text', text: '<event>Resume the task where you left off.</event>' });
   task.transcript.push({ role: 'user', content: blocks });
   const ctx = { scope: 'task', task, topicId: task.topicId, turnId: id('turn_'), hooks };
@@ -63,7 +75,7 @@ async function run(task) {
   try {
     const r = await runLoop({
       transcript: task.transcript,
-      system: renderSystemPrompt(TASK_ADDENDUM(task)),
+      system: renderSystemPrompt(chat ? CHAT_ADDENDUM(task) : TASK_ADDENDUM(task)),
       ctx,
       effort: s.provider.anthropic.taskEffort || 'high',
       signal: ac.signal,
@@ -74,6 +86,11 @@ async function run(task) {
       const waiting = db.data.approvals.some((a) => a.taskId === task.id && a.status === 'pending');
       if (waiting) {
         upsertTask({ id: task.id, status: 'needs_you', note: 'Waiting for your approval' });
+      } else if (chat) {
+        // A chat stays open after replying; its text is already in the chat as steps.
+        const text = (r.taskText || '').trim();
+        upsertTask({ id: task.id, status: 'idle', note: text.split('\n')[0].slice(0, 200) || 'Replied' });
+        if (text) notify({ title: task.title, body: text.replace(/\s+/g, ' ').slice(0, 180), kind: 'task', url: `/?chat=${task.id}` });
       } else {
         const text = (r.taskText || '').trim();
         if (text) reportToUser(text, ctx);
@@ -122,7 +139,7 @@ export function messageTask({ id: tid, message, action }) {
     upsertTask({ id: tid, status: 'queued', note: 'Retrying…' });
   }
   if (message) {
-    (inbox.get(tid) || inbox.set(tid, []).get(tid)).push({ text: `Message from the user: ${message}` });
+    (inbox.get(tid) || inbox.set(tid, []).get(tid)).push({ text: `Message from the user: ${message}`, user: message });
     addTaskStep(t, { kind: 'user', text: message });
     if (!running.has(tid) && !['cancelled'].includes(t.status)) upsertTask({ id: tid, status: 'queued', question: null });
   }

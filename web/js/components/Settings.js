@@ -13,6 +13,7 @@ export const SECTIONS = [
   { id: 'agent', icon: 'bot', label: 'Agent & autonomy', C: S.AgentSection },
   { id: 'prompt', icon: 'code', label: 'System prompt', C: S.PromptSection },
   { id: 'memory', icon: 'brain', label: 'Memory', C: S.MemorySection },
+  { id: 'checkins', icon: 'eye', label: 'Check-ins & watchers', C: S.CheckinsSection, serverOnly: true },
   { id: 'routines', icon: 'clock', label: 'Routines', C: S.RoutinesSection },
   { id: 'tools', icon: 'plug', label: 'Tools & connectors', C: S.ToolsSection },
   { id: 'devices', icon: 'cpu', label: 'Devices', C: S.DevicesSection },

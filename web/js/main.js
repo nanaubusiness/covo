@@ -10,6 +10,7 @@ import { Orb } from './components/Orb.js';
 import { Feed, MessageMenu } from './components/Feed.js';
 import { Composer, Suggestions } from './components/Composer.js';
 import { TasksView, TaskDetail } from './components/Tasks.js';
+import { ChatView, ChatComposer, NewChatView, NewChatComposer } from './components/Chat.js';
 import { MakeView, ArtifactViewer } from './components/Make.js';
 import { Drawer, Sidebar, Overview, ProfileSheet, VoiceMode } from './components/Panels.js';
 import { Settings } from './components/Settings.js';
@@ -33,7 +34,7 @@ wide.addEventListener?.('change', computeLayout);
 function TabBar() {
   const tab = useStore((s) => s.ui.tab);
   const needs = useStore(needsCount);
-  const go = (id) => setUI({ tab: id, topicFilter: null });
+  const go = (id) => setUI({ tab: id, topicFilter: null, chat: null });
   return html`<nav class="tabbar" aria-label="Sections">
     <button class=${tab === 'chat' ? 'on' : ''} onClick=${() => go('chat')} aria-current=${tab === 'chat'}><${Icon} name="chat" />${t('Chat')}</button>
     <button class=${tab === 'tasks' ? 'on' : ''} onClick=${() => go('tasks')} aria-current=${tab === 'tasks'}><${Icon} name="tasks" />${t('Tasks')}${needs > 0 && html`<span class="count">${needs}</span>`}</button>
@@ -57,6 +58,7 @@ const orbClick = () => {
 /* ───────────── mobile ───────────── */
 function MobileApp() {
   const tab = useStore((s) => s.ui.tab);
+  const chat = useStore((s) => s.ui.chat);
   const p = useStore((s) => s.settings.profile);
   return html`<div class="m-app">
     <header class="m-header">
@@ -65,12 +67,12 @@ function MobileApp() {
       <button class="circle-btn" aria-label=${t('Profile')} onClick=${() => setUI({ profile: true })} style=${p.avatarColor ? `background:${p.avatarColor};color:#fff;border-color:transparent` : ''}>${(p.name || 'U').charAt(0).toUpperCase()}</button>
     </header>
     <main class="m-body">
-      ${tab === 'chat' && html`<${Feed} variant="m" />`}
+      ${tab === 'chat' && (chat === 'new' ? html`<${NewChatView} variant="m" />` : chat ? html`<${ChatView} id=${chat} variant="m" />` : html`<${Feed} variant="m" />`)}
       ${tab === 'tasks' && html`<div class="m-page scroll"><${TasksView} /></div>`}
       ${tab === 'make' && html`<div class="m-page scroll"><${MakeView} /></div>`}
     </main>
     <div class="m-bottom">
-      ${tab === 'chat' && html`<${Suggestions} /><${Composer} />`}
+      ${tab === 'chat' && (chat === 'new' ? html`<${NewChatComposer} />` : chat ? html`<${ChatComposer} id=${chat} />` : html`<${Suggestions} /><${Composer} />`)}
       <${TabBar} />
     </div>
   </div>`;
@@ -79,6 +81,7 @@ function MobileApp() {
 /* ───────────── desktop ───────────── */
 function DesktopApp() {
   const tab = useStore((s) => s.ui.tab);
+  const chat = useStore((s) => s.ui.chat);
   const panel = useStore((s) => s.ui.panel);
   const viewer = useStore((s) => s.ui.viewer);
   const task = useStore((s) => s.ui.task);
@@ -94,7 +97,9 @@ function DesktopApp() {
           <button class="icon-btn" title=${t('Overview')} aria-label=${t('Overview')} onClick=${() => setUI({ panel: panel === 'none' ? 'overview' : 'none', viewer: null, task: null })}><${Icon} name="panel" /></button>
         </div>
       </header>
-      ${tab === 'chat' && html`<${Feed} variant="d" />
+      ${tab === 'chat' && chat && html`${chat === 'new' ? html`<${NewChatView} variant="d" />` : html`<${ChatView} id=${chat} variant="d" />`}
+        <div class="d-bottom"><div class="d-center">${chat === 'new' ? html`<${NewChatComposer} />` : html`<${ChatComposer} id=${chat} />`}</div></div>`}
+      ${tab === 'chat' && !chat && html`<${Feed} variant="d" />
         <div class="d-bottom"><div class="d-center"><${Suggestions} /><${Composer} autoFocus /></div></div>`}
       ${tab === 'tasks' && html`<div class="d-page scroll" style="padding-top:96px"><div class="d-center"><${TasksView} /></div></div>`}
       ${tab === 'make' && html`<div class="d-page scroll" style="padding-top:96px"><div style="max-width:1100px;margin:0 auto"><${MakeView} /></div></div>`}
@@ -167,6 +172,7 @@ export async function boot() {
     const q = new URLSearchParams(location.search);
     if (q.get('task')) setUI({ task: q.get('task'), panel: 'task' });
     if (q.get('tab')) setUI({ tab: q.get('tab') });
+    if (q.get('chat')) setUI({ tab: 'chat', chat: q.get('chat') });
     if (q.get('approval')) { const ap = b.approvals.find((a) => a.id === q.get('approval')); if (ap?.topicId) setUI({ tab: 'chat' }); }
     if (q.toString()) history.replaceState(null, '', location.pathname);
   } catch (e) {

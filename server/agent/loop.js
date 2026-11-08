@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, id, log, truncate } from '../util.js';
-import { addFeed, updateFeed, addUsage, save } from '../db.js';
+import { addFeed, updateFeed, addUsage, save, addTaskStep } from '../db.js';
 import { broadcast } from '../bus.js';
 import { getSettings, activeProvider } from '../config.js';
 import { anthropicTurn, Anthropic } from './providers/anthropic.js';
@@ -54,6 +54,12 @@ export function windowed(transcript, max) {
   return transcript.slice(start);
 }
 
+function toolLine(b) {
+  const i = b.input || {};
+  const hint = i.command || i.url || i.query || i.target || i.path || i.title || i.action || '';
+  return `${b.name}${hint ? ': ' + String(hint).replace(/\s+/g, ' ').slice(0, 120) : ''}`;
+}
+
 async function callModel(args) {
   const p = activeProvider();
   if (p === 'claude-sub') return claudeSubTurn(args);
@@ -64,7 +70,8 @@ async function callModel(args) {
 
 export async function runLoop({ transcript, system, ctx, effort, signal, onStateChange }) {
   const s = getSettings();
-  const maxSteps = s.agent.maxSteps || 40;
+  // No step cap: the agent works until it's done (Stop in the app still ends a run).
+  const maxSteps = Number(s.agent.maxSteps) > 0 ? Number(s.agent.maxSteps) : Infinity;
   const posted = []; // assistant texts posted to the thread this run
   const showTools = s.developer.enabled && s.developer.showToolCalls;
   let steps = 0;
@@ -84,14 +91,22 @@ export async function runLoop({ transcript, system, ctx, effort, signal, onState
     try {
       result = await callModel({
         system,
-        messages: materialize(windowed(transcript, s.agent.contextMessages || 120)),
+        // Claude plan: the whole history goes to one long-lived Claude Code session, which compacts it
+        // itself when needed. Other providers keep an optional window.
+        messages: materialize(activeProvider() === 'claude-sub' || !(Number(s.agent.contextMessages) > 0) ? transcript : windowed(transcript, Number(s.agent.contextMessages))),
+        convKey: ctx.scope === 'task' ? ctx.task?.id : 'main',
         tools,
         effort,
         signal,
         onBlockStart: (block) => { if (block.type === 'text') textItem = null; },
         onText: (delta) => {
           onStateChange?.('writing');
-          if (ctx.scope === 'task') { (ctx._taskText ??= ''); ctx._taskText += delta; return; } // tasks speak via report_to_user
+          if (ctx.scope === 'task') { // tasks speak via report_to_user; their own chat shows the text live
+            (ctx._taskText ??= ''); ctx._taskText += delta;
+            ctx._stepText = (ctx._stepText || '') + delta;
+            broadcast('task.delta', { id: ctx.task.id, delta });
+            return;
+          }
           if (!textItem) { textItem = addFeed({ kind: 'assistant', text: '', streaming: true, ...feedBase() }); stepItems.push(textItem); }
           textItem.text += delta;
           broadcast('feed.delta', { id: textItem.id, delta });
@@ -116,6 +131,14 @@ export async function runLoop({ transcript, system, ctx, effort, signal, onState
     }
 
     addUsage(result.usage);
+    if (ctx.scope === 'task' && ctx.task) {
+      // Each model response becomes a message in the task's own chat.
+      const said = (ctx._stepText || '').trim();
+      ctx._stepText = '';
+      if (said) addTaskStep(ctx.task, { kind: 'assistant', text: said });
+      for (const b of result.content) if (b.type === 'tool_use' && !['update_task', 'report_to_user', 'set_topic'].includes(b.name)) addTaskStep(ctx.task, { kind: 'tool', text: toolLine(b) });
+      broadcast('task.delta.end', { id: ctx.task.id });
+    }
     if (textItem) { updateFeed(textItem.id, { text: textItem.text, streaming: false, usage: s.developer.enabled ? result.usage : undefined }); posted.push(textItem.text); }
     // Text blocks interleaved with server tools: make sure every text block became an item.
     const assistantContent = result.content;
@@ -173,6 +196,6 @@ export async function runLoop({ transcript, system, ctx, effort, signal, onState
     if (ctx.topicId !== topicAtStart) for (const it of stepItems) updateFeed(it.id, { topicId: ctx.topicId });
     if (ctx.stopAfterTool) break;
   }
-  if (steps >= maxSteps) addFeed({ kind: 'error', text: `Stopped after ${maxSteps} steps (Settings → Agent → Max steps).`, topicId: ctx.topicId, source: ctx.scope });
+  if (Number.isFinite(maxSteps) && steps >= maxSteps) addFeed({ kind: 'error', text: `Stopped after ${maxSteps} steps (Settings → Agent → Max steps).`, topicId: ctx.topicId, source: ctx.scope });
   return { posted, steps, taskText: ctx._taskText || '' };
 }

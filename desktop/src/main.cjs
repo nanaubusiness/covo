@@ -34,7 +34,22 @@ const portFree = (port, host) => new Promise((resolve) => {
   s.listen(port, host);
 });
 
+// If an always-on Covo server already runs on this computer (e.g. a launchd service that your
+// phone also uses), attach to it instead of starting a second agent with its own data.
+// It must have DATA_DIR/desktop.key (same user only); the app signs in with that key.
+async function attachToRunningServer() {
+  const url = (process.env.COVO_ATTACH_URL || prefs.attachUrl || 'http://127.0.0.1:8787').replace(/\/$/, '');
+  const keyFile = (process.env.COVO_ATTACH_KEYFILE || prefs.attachKeyFile || path.join(os.homedir(), 'covo', 'data', 'desktop.key')).replace(/^~(?=\/)/, os.homedir());
+  let key = '';
+  try { key = fs.readFileSync(keyFile, 'utf8').trim(); } catch { return false; }
+  try { if (!(await fetch(url + '/api/auth/status', { signal: AbortSignal.timeout(1500) })).ok) return false; } catch { return false; }
+  origin = url; attachedKey = key;
+  return true;
+}
+let attachedKey = '';
+
 async function startServer() {
+  if (await attachToRunningServer()) return;
   const host = prefs.lan ? '0.0.0.0' : '127.0.0.1';
   let port = Number(prefs.port) || 8787;
   for (let i = 0; i < 20 && !(await portFree(port, host)); i++) port++;
@@ -49,7 +64,7 @@ async function startServer() {
 }
 
 const lanAddresses = () => Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => `http://${i.address}:${new URL(origin).port}`);
-const signInUrl = () => `${origin}/api/auth/desktop?key=${encodeURIComponent(KEY)}`;
+const signInUrl = () => `${origin}/api/auth/desktop?key=${encodeURIComponent(attachedKey || KEY)}`;
 
 function createWindow({ show = true } = {}) {
   const b = prefs.bounds || {};

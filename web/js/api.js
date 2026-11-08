@@ -58,10 +58,11 @@ export const api = {
     set({
       settings: b.settings, provider: b.provider, agentState: b.state, version: b.version,
       feed: b.feed, topics: b.topics, tasks: b.tasks, artifacts: b.artifacts, approvals: b.approvals,
-      memory: b.memory, routines: b.routines, devices: b.devices, mcp: b.mcp, usage: b.usage,
+      memory: b.memory, routines: b.routines, watchers: b.watchers || [], transcribe: !!b.transcribe, lastCheckin: b.lastCheckin || null, devices: b.devices, mcp: b.mcp, usage: b.usage,
       suggestions: b.suggestions || [], emailConfigured: b.emailConfigured, vapidKey: b.vapidKey,
       categories: b.categories, presets: b.presets, server: b.server, integrations: b.integrations || {}, boot: 'ready',
     });
+    if (b.settings?.agent?.name) document.title = b.settings.agent.name; // window/tab title follows the agent's name
     return b;
   },
 
@@ -94,11 +95,14 @@ function handleEvent({ type, data }) {
     case 'task.upsert': mutate((s) => { const i = s.tasks.findIndex((t) => t.id === data.id); s.tasks = i >= 0 ? s.tasks.map((t) => (t.id === data.id ? data : t)) : [data, ...s.tasks]; }); break;
     case 'task.remove': mutate((s) => { s.tasks = s.tasks.filter((t) => t.id !== data.id); }); break;
     case 'task.state': mutate((s) => { s.tasks = s.tasks.map((t) => (t.id === data.id ? { ...t, liveState: data.state } : t)); }); break;
+    case 'task.delta': mutate((s) => { s.taskStream = { ...s.taskStream, [data.id]: (s.taskStream?.[data.id] || '') + data.delta }; }); break;
+    case 'task.delta.end': mutate((s) => { const n = { ...s.taskStream }; delete n[data.id]; s.taskStream = n; }); break;
     case 'artifact.upsert': mutate((s) => { const i = s.artifacts.findIndex((a) => a.id === data.id); s.artifacts = i >= 0 ? s.artifacts.map((a) => (a.id === data.id ? data : a)) : [data, ...s.artifacts]; }); break;
     case 'artifact.remove': mutate((s) => { s.artifacts = s.artifacts.filter((a) => a.id !== data.id); }); break;
     case 'approval.upsert': mutate((s) => { s.approvals = upsert(s.approvals, data); }); break;
     case 'memory': set({ memory: data }); break;
     case 'routines': set({ routines: data }); break;
+    case 'watchers': set({ watchers: data }); break;
     case 'devices': set({ devices: data }); break;
     case 'mcp': set({ mcp: data }); break;
     case 'integrations': set({ integrations: data }); break;
