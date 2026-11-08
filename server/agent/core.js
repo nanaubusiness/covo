@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, id, now, log, truncate } from '../util.js';
-import { db, save, addFeed, updateFeed, addApproval, updateApproval, setTopicStatus, upsertTopic, setMainWorking } from '../db.js';
+import { db, save, addFeed, updateFeed, removeFeed, addApproval, updateApproval, setTopicStatus, upsertTopic, setMainWorking } from '../db.js';
 import { bus, broadcast } from '../bus.js';
 import { getSettings, activeProvider } from '../config.js';
 import { notify } from '../notify.js';
@@ -124,7 +124,8 @@ async function pump() {
       const ac = new AbortController();
       main.abort = ac;
       const routine = items.find((i) => i.routine)?.routine;
-      const checkin = items.some((i) => i.checkin);
+      const checkin = items.find((i) => i.checkin)?.checkin;
+      const feedStart = db.data.feed.length;
       const ctx = { scope: 'main', topicId: lastTopicId(), turnId: id('turn_'), hooks };
       try {
         const r = await runLoop({
@@ -138,6 +139,11 @@ async function pump() {
         });
         if (routine) afterRoutine(routine, r);
         // A check-in that found something worth saying pings your phone; a quiet one stays silent.
+        // A quiet scheduled check-in leaves no trace in the chat.
+        if (checkin) {
+          for (const f of db.data.feed.slice(feedStart)) if (f.kind === 'assistant' && f.text.trim() === QUIET) removeFeed(f.id);
+          r.posted = r.posted.filter((p) => p.trim() !== QUIET);
+        }
         if (checkin && r.posted.length) notify({ title: s.agent.name || 'Covo', body: r.posted[0].split('\n\n')[0].replace(/\[\[|\]\]/g, '').slice(0, 180), kind: 'task', url: '/?tab=chat' });
       } catch (e) {
         log.error('turn failed', e);
@@ -295,6 +301,7 @@ function afterRoutine(r, result) {
 /* ---------------- check-ins (Duet-style) ---------------- */
 // Every few hours during the day: look at every watcher and open loop, and speak up only
 // when something changed that matters. Nothing worth saying → no message, no notification.
+const QUIET = '(quiet)';
 export function runCheckin({ force = false } = {}) {
   if (activeProvider() === 'demo') return { ok: false, reason: 'demo' };
   if (!force && (main.busy || main.queue.length)) return { ok: false, reason: 'busy' };
@@ -304,11 +311,12 @@ export function runCheckin({ force = false } = {}) {
   (db.data.meta ||= {}).lastCheckin = now();
   save();
   enqueue({
-    type: 'event', source: 'checkin', checkin: true,
+    type: 'event', source: 'checkin', checkin: force ? 'manual' : 'scheduled',
     text: `Check-in. Quietly go through:
 1. Every watcher listed in <context>: look at it the way its "how" says (web search, reading pages, the computer tool on the Mac for logged-in dashboards, connected services). Compare with its saved state and save the new snapshot with update_watch_state, even if nothing changed.
 2. Open topics, tasks, approvals and deadlines: anything slipping, blocked or waiting on ${getSettings().profile.name || 'the user'}?
-Then speak only if something changed that matters or needs them (use each watcher's notify_when): set_topic, then 1-3 short bubbles with the numbers. If nothing is worth saying, reply with nothing at all: no "all quiet" message.`,
+Then speak only if something changed that matters or needs them (use each watcher's notify_when): set_topic, then 1-3 short bubbles with the numbers.
+${force ? `${getSettings().profile.name || 'The user'} started this check-in by hand, so if nothing changed, say so in one short bubble.` : `If nothing is worth saying, your whole reply must be exactly ${QUIET} and nothing else.`}`,
   });
   return { ok: true, watchers: watchers.length };
 }
