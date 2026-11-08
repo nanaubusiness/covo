@@ -35,7 +35,7 @@ export function Login({ appName }) {
 
 export function Setup() {
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({ name: '', password: '', confirm: '', brain: 'claude', apiKey: '', baseURL: 'http://localhost:11434/v1', model: 'llama3.1', theme: 'classic', language: getLang() });
+  const [f, setF] = useState({ name: '', password: '', confirm: '', brain: window.COVO_STANDALONE ? 'claude' : 'plan', apiKey: '', baseURL: 'http://localhost:11434/v1', model: 'llama3.1', theme: 'classic', language: getLang() });
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const up = (patch) => setF({ ...f, ...patch });
@@ -45,6 +45,7 @@ export function Setup() {
     setBusy(true); setErr('');
     try {
       await api.post('/api/auth/setup', { password: f.password, name: f.name, language: f.language, theme: f.theme, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      if (f.brain === 'plan') await api.put('/api/settings', { provider: { type: 'claude-sub' } });
       if (f.brain === 'claude' && f.apiKey) await api.put('/api/settings', { provider: { type: 'anthropic', anthropic: { apiKey: f.apiKey.trim() } } });
       if (f.brain === 'local') await api.put('/api/settings', { provider: { type: 'openai', openai: { baseURL: f.baseURL, model: f.model } } });
       setStep(4);
@@ -79,7 +80,8 @@ export function Setup() {
   if (step === 2) return card(html`
     <h1 style="font-size:var(--fs-2xl)">Choose its brain</h1>
     <p class="lead">You can change this anytime in Settings → Model.</p>
-    <button class=${cx('choice', f.brain === 'claude' && 'on')} onClick=${() => up({ brain: 'claude' })}><${Icon} name="sparkle" /><div><b>Claude (recommended)</b><small>Best for autonomous, multi-step work. Needs an Anthropic API key.</small></div></button>
+    ${!window.COVO_STANDALONE && html`<button class=${cx('choice', f.brain === 'plan' && 'on')} onClick=${() => up({ brain: 'plan' })}><${Icon} name="sparkle" /><div><b>Claude with your plan (recommended)</b><small>Uses your Claude Pro or Max plan through Claude Code on this computer. No API key. Sign in once by running "claude" in a terminal here.</small></div></button>`}
+    <button class=${cx('choice', f.brain === 'claude' && 'on')} onClick=${() => up({ brain: 'claude' })}><${Icon} name="sparkle" /><div><b>Claude API key</b><small>Best for autonomous, multi-step work. Needs an Anthropic API key.</small></div></button>
     ${f.brain === 'claude' && html`<input class="input" type="password" placeholder="sk-ant-… (optional now)" value=${f.apiKey} onInput=${(e) => up({ apiKey: e.target.value })} autocomplete="off" />
       <div class="hint">Get a key at console.anthropic.com → API keys. It's stored only on your server.</div>`}
     <button class=${cx('choice', f.brain === 'local' && 'on')} onClick=${() => up({ brain: 'local' })}><${Icon} name="cpu" /><div><b>Local or other model</b><small>Ollama, LM Studio, OpenRouter… any OpenAI-compatible endpoint${window.COVO_STANDALONE ? ' that allows browser access (CORS)' : ''}.</small></div></button>

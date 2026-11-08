@@ -18,6 +18,7 @@ import * as core from './agent/core.js';
 import { demo } from './agent/demo-host.js';
 import { anthropicTest, anthropicModels, resetAnthropicDegraded } from './agent/providers/anthropic.js';
 import { openaiTest } from './agent/providers/openai.js';
+import { claudeSubTest } from './agent/providers/claude-sub.js';
 import { artifactToHtml } from '../web/js/lib/artifact-html.js';
 import { publicStatus as integrationStatus, restartTelegram } from './integrations/telegram.js';
 
@@ -252,7 +253,7 @@ r.put('/api/settings', async (req, res) => {
 r.post('/api/settings/test', async (req, res) => {
   const p = getSettings().provider.type;
   try {
-    const out = p === 'anthropic' ? await anthropicTest() : p === 'openai' ? await openaiTest() : { ok: true, model: 'demo', reply: 'Demo mode is active.' };
+    const out = p === 'claude-sub' ? await claudeSubTest() : p === 'anthropic' ? await anthropicTest() : p === 'openai' ? await openaiTest() : { ok: true, model: 'demo', reply: 'Demo mode is active.' };
     send(res, 200, out);
   } catch (e) {
     send(res, 200, { ok: false, error: e.message });

@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS = {
     revealPacing: true,       // reveal assistant bubbles one at a time with typing dots
   },
   provider: {
-    type: 'demo',             // anthropic | openai | demo
+    type: 'demo',             // claude-sub | anthropic | openai | demo
     anthropic: {
       apiKey: process.env.ANTHROPIC_API_KEY || '',
       baseURL: '',
@@ -38,6 +38,9 @@ export const DEFAULT_SETTINGS = {
       refusalFallback: true,  // server-side fallbacks: "default"
       promptCaching: true,
     },
+    // Your Claude Pro/Max plan, through the official Claude Agent SDK + Claude Code on this computer.
+    // Effort uses provider.anthropic.effort / taskEffort.
+    claudeSub: { model: 'claude-opus-5-5', claudePath: '' },
     openai: { baseURL: 'http://localhost:11434/v1', apiKey: '', model: 'llama3.1', maxTokens: 4096 },
   },
   agent: {
@@ -135,6 +138,7 @@ export function resetSettings() {
 // Which provider actually runs: falls back to demo when no key is configured.
 export function activeProvider() {
   const p = settings.provider;
+  if (p.type === 'claude-sub' && typeof window === 'undefined') return 'claude-sub'; // needs Node + Claude Code
   if (p.type === 'anthropic' && (p.anthropic.apiKey || process.env.ANTHROPIC_API_KEY)) return 'anthropic';
   if (p.type === 'openai' && p.openai.baseURL && p.openai.model) return 'openai';
   return 'demo';

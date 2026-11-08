@@ -80,6 +80,8 @@ npm start            # → http://localhost:8787
 ```
 Windows without a terminal: double-click `start.bat`, or run `scripts\windows\install-windows.ps1` for a shortcut and auto-start. Details: [docs/DEPLOY_WINDOWS.md](docs/DEPLOY_WINDOWS.md).
 
+**Use your Claude Pro / Max plan instead of an API key (server or desktop app):** install [Claude Code](https://code.claude.com) on the computer that runs Covo, run `claude` once and sign in, then pick **Claude plan** in Settings → Model (or **Claude with your plan** during setup). Covo runs Anthropic's official [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview), which starts the unmodified Claude Code with your own login, so Covo never sees or stores your credentials. Covo's tools and approval rules work the same. This is for your own personal use: Anthropic's [terms](https://code.claude.com/docs/en/legal-and-compliance) don't allow serving other people from your plan. Code: `server/agent/providers/claude-sub.js`.
+
 **VPS with automatic HTTPS:**
 ```bash
 sudo bash scripts/vps/install.sh      # asks for your domain; Docker + Caddy (Let's Encrypt)

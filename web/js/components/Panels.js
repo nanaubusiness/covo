@@ -109,7 +109,7 @@ export function Sidebar() {
     <div class="foot">
       <button class="topic-item" onClick=${() => setUI({ settings: 'devices' })}><${Icon} name="cpu" size="sm" /><span class="t">${t('Devices')}</span><span class="pill"><span class=${cx('d', online && 'on')}></span>${online}</span></button>
       <button class="topic-item" onClick=${() => setUI({ settings: 'general' })}><${Icon} name="settings" size="sm" /><span class="t">${t('Settings')}</span><span class="kbd">,</span></button>
-      <button class="me-row" onClick=${() => setUI({ profile: true })}><span class="av"><${Avatar} name=${p.name} color=${p.avatarColor} size=${30} /></span><span class="grow"><b style="font-size:var(--fs-md);font-weight:500">${p.name || 'You'}</b><small>${s.provider === 'demo' ? t('Demo mode') : s.settings?.provider?.[s.provider]?.model || s.provider}</small></span></button>
+      <button class="me-row" onClick=${() => setUI({ profile: true })}><span class="av"><${Avatar} name=${p.name} color=${p.avatarColor} size=${30} /></span><span class="grow"><b style="font-size:var(--fs-md);font-weight:500">${p.name || 'You'}</b><small>${s.provider === 'demo' ? t('Demo mode') : s.settings?.provider?.[s.provider === 'claude-sub' ? 'claudeSub' : s.provider]?.model || s.provider}</small></span></button>
     </div>
   </aside>`;
 }
@@ -155,7 +155,7 @@ export function ProfileSheet() {
   return html`<${Sheet} title=${t('Profile')} onClose=${close} small>
     <div class="stack" style="padding:4px 16px 20px;gap:14px">
       <div class="row" style="gap:12px"><${Avatar} name=${p.name} color=${p.avatarColor} size=${52} />
-        <div class="grow"><b style="font-size:var(--fs-lg)">${p.name || 'You'}</b><div class="hint">${p.email || (s.provider === 'demo' ? t('Demo mode') : `${s.provider} · ${s.settings?.provider?.[s.provider]?.model || ''}`)}</div></div>
+        <div class="grow"><b style="font-size:var(--fs-lg)">${p.name || 'You'}</b><div class="hint">${p.email || (s.provider === 'demo' ? t('Demo mode') : `${s.provider} · ${s.settings?.provider?.[s.provider === 'claude-sub' ? 'claudeSub' : s.provider]?.model || ''}`)}</div></div>
         <button class="btn outline sm" onClick=${() => setUI({ profile: false, settings: 'profile' })}>${t('Edit')}</button></div>
       <div class="group" style="margin:0">
         <div class="item"><${Icon} name="palette" /><div class="txt"><b>${t('Theme')}</b></div>
