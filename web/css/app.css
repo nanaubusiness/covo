@@ -427,3 +427,10 @@ a { color: var(--accent); }
 .topic-head { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0 0 10px; }
 .topic-head .pill { gap: 6px; }
 .topic-head-actions { display: flex; gap: 6px; }
+
+/* Model + effort picker under the composer */
+.model-picker { position: relative; display: flex; gap: 4px; padding: 4px 6px 0; }
+.mp-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: var(--r-pill); font-size: var(--fs-xs); color: var(--ink-3); }
+.mp-chip:hover { background: var(--surface-2); color: var(--ink); }
+.mp-chip small { font-size: var(--fs-2xs); padding: 0 5px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--ink-3); }
+.mp-menu { top: auto; bottom: calc(100% + 4px); inset-inline-end: auto; left: 0; min-width: 200px; }

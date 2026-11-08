@@ -4,6 +4,39 @@ import { t, getLang } from '../lib/i18n.js';
 import { api } from '../api.js';
 import { useStore, setUI, mutate, toast, get } from '../store.js';
 import { cx } from './ui.js';
+import { saveSettings } from './settings/common.js';
+
+// Model + effort right under the message box (like T3 Code), for Claude plan / Claude API.
+const MODELS = [
+  { id: 'claude-opus-5-5', name: 'Opus 5.5' },
+  { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5' },
+  { id: 'claude-haiku-5-5', name: 'Haiku 5.5' },
+];
+const EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
+function ModelPicker() {
+  const p = useStore((s) => s.settings?.provider);
+  const active = useStore((s) => s.provider);
+  const [open, setOpen] = useState(null); // 'model' | 'effort'
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(null); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  if (!p || !['claude-sub', 'anthropic'].includes(active)) return null;
+  const key = active === 'claude-sub' ? 'claudeSub' : 'anthropic';
+  const model = p[key]?.model || 'claude-opus-5-5';
+  const effort = p.anthropic?.effort || 'medium';
+  const label = MODELS.find((m) => m.id === model)?.name || model.replace(/^claude-/, '');
+  const pick = (patch) => { saveSettings({ provider: patch }); setOpen(null); };
+  return html`<div class="model-picker" ref=${ref}>
+    <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'model' ? null : 'model')}><${Icon} name="sparkle" size="sm" />${label}${active === 'claude-sub' ? html`<small>plan</small>` : ''}<${Icon} name="down" size="sm" /></button>
+    <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'effort' ? null : 'effort')}><${Icon} name="brain" size="sm" />${(EFFORTS.find(([id]) => id === effort) || [, effort])[1]}<${Icon} name="down" size="sm" /></button>
+    ${open === 'model' && html`<div class="topic-menu mp-menu" role="menu">${MODELS.map((m) => html`<button role="menuitem" onClick=${() => pick({ [key]: { model: m.id } })}><span class="grow">${m.name}</span>${m.id === model && html`<${Icon} name="check" size="sm" />`}</button>`)}</div>`}
+    ${open === 'effort' && html`<div class="topic-menu mp-menu" style="left:96px" role="menu"><div class="menu-label">Effort for chat replies</div>${EFFORTS.map(([id, name]) => html`<button role="menuitem" onClick=${() => pick({ anthropic: { effort: id } })}><span class="grow">${name}</span>${id === effort && html`<${Icon} name="check" size="sm" />`}</button>`)}</div>`}
+  </div>`;
+}
 
 const SR = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
@@ -99,5 +132,6 @@ export function Composer({ autoFocus }) {
           ? html`<button class="send-btn" aria-label=${t('Stop')} title=${t('Stop')} onClick=${() => api.post('/api/stop')}><${Icon} name="stop" size="sm" /></button>`
           : html`<button class="send-btn" aria-label=${t('Voice mode')} title=${t('Voice mode')} onClick=${() => setUI({ voice: true })}><${Icon} name="wave" size="sm" /></button>`}
     </div>
+    <${ModelPicker} />
   </div>`;
 }
