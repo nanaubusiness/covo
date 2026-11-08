@@ -137,6 +137,7 @@ export function ModelSection() {
         <${SelectItem} title="Model" value=${cs.model} onChange=${(v) => setP({ claudeSub: { model: v } })} options=${CLAUDE_MODELS.filter((m) => !m.id.includes('fable'))} width=${220} />
         <${SelectItem} title="Effort — chat" value=${a.effort} onChange=${(v) => setP({ anthropic: { effort: v } })} options=${['low', 'medium', 'high', 'xhigh', 'max']} width=${140} />
         <${SelectItem} title="Effort — background tasks & routines" desc="Higher effort uses more of your plan's limits." value=${a.taskEffort} onChange=${(v) => setP({ anthropic: { taskEffort: v } })} options=${['low', 'medium', 'high', 'xhigh', 'max']} width=${140} />
+        <${ToggleItem} title="Web search" desc="Let Claude search the web and read pages (runs in Claude Code on your plan)." value=${cs.webSearch !== false} onChange=${(v) => setP({ claudeSub: { webSearch: v } })} />
         <${TextItem} title="Claude Code path" desc="Advanced: leave empty to use the copy that ships with the Agent SDK." value=${cs.claudePath} placeholder="/usr/local/bin/claude" onSave=${(v) => setP({ claudeSub: { claudePath: v } })} width=${260} />
       <//>`}
     ${p.type === 'anthropic' && html`
@@ -249,6 +250,9 @@ export function PromptSection() {
         </div>
       </div>
     <//>
+    <${Group} title="Instructions file (like CLAUDE.md)">
+      <${TextItem} title="File" desc="A CLAUDE.md-style file on this computer, read on every turn so your edits apply right away. Lines like @AGENTS.md pull in other files." value=${sp.instructionsFile || ''} placeholder="~/project/CLAUDE.md" onSave=${(v) => saveSettings({ systemPrompt: { instructionsFile: v.trim() } }, { quiet: false }).then(load)} width=${320} />
+    <//>
     <${Group} title="Extra instructions">
       <div class="item col">
         <div class="hint">Appended to whatever prompt is active — a safe place for your house rules ("Always reply in Iraqi Arabic", "Sign emails as Mo").</div>
@@ -325,6 +329,38 @@ export function RoutinesSection() {
   <//>`;
 }
 
+/* ═════════════ Check-ins & watchers (Duet-style) ═════════════ */
+const HOURS = [['30', 'Every 30 minutes'], ['60', 'Every hour'], ['120', 'Every 2 hours'], ['180', 'Every 3 hours'], ['240', 'Every 4 hours'], ['360', 'Every 6 hours']];
+export function CheckinsSection() {
+  const c = useStore((s) => s.settings.agent.checkins) || {};
+  const watchers = useStore((s) => s.watchers);
+  const approvals = useStore((s) => s.settings.agent.approvals);
+  const set = (patch) => saveSettings({ agent: { checkins: patch } });
+  const checkNow = () => api.post('/api/checkin').then((r) => toast({ title: r.ok ? 'Checking in now' : 'Busy, try again in a moment', ms: 1800 })).catch((e) => toast({ title: e.message }));
+  const ICON = { social: 'share', website: 'globe', search: 'search', metric: 'chart', other: 'eye' };
+  return html`<${Page} title=${t('Check-ins & watchers')} desc="A few times a day your agent quietly looks at everything it's watching (your social accounts, sites, searches) and every open loop. It only messages you when something changed that matters or needs you.">
+    <${Group} title="Check-ins">
+      <${ToggleItem} title="Check in during the day" desc="Quiet check-ins send nothing. When something matters you get a message and a notification." value=${c.enabled !== false} onChange=${(v) => set({ enabled: v })} />
+      <${SelectItem} title="How often" value=${String(c.everyMin || 120)} onChange=${(v) => set({ everyMin: Number(v) })} options=${HOURS.map(([id, name]) => ({ id, name }))} width=${190} />
+      <${TextItem} title="From" type="time" value=${c.from || '08:00'} onSave=${(v) => set({ from: v })} width=${120} />
+      <${TextItem} title="Until" type="time" value=${c.to || '22:00'} onSave=${(v) => set({ to: v })} width=${120} />
+      <${Item} title="Check in now" desc="Runs a check-in right away."><button class="btn outline sm" onClick=${checkNow}><${Icon} name="play" size="sm" />${t('Run now')}</button><//>
+      <${SelectItem} title="Using your Mac during check-ins" desc="Reading dashboards like YouTube Studio needs the computer tool. On \"Ask\", each check-in that needs it asks you first (one OK covers 30 minutes). On \"Auto\", it goes ahead without asking." value=${approvals?.computer || 'ask'} onChange=${(v) => saveSettings({ agent: { approvals: { computer: v } } })} options=${[{ id: 'ask', name: 'Ask' }, { id: 'auto', name: 'Auto' }, { id: 'block', name: 'Never' }]} width=${120} />
+    <//>
+    <${Group} title=${`Watching (${watchers.length})`}>
+      ${watchers.map((w) => html`<div class="item" style="align-items:flex-start">
+        <${Icon} name=${ICON[w.kind] || 'eye'} />
+        <div class="txt"><b dir="auto">${w.title}</b><small dir="auto">${w.target}</small>
+          ${w.notify_when && html`<small dir="auto">Tells you when: ${w.notify_when}</small>`}
+          <small dir="auto">${w.lastChecked ? `Last look ${fmtTime(w.lastChecked)}: ${w.state || '—'}` : 'Not checked yet'}</small>
+          <div class="row" style="gap:2px;margin:6px 0 0 -8px"><button class="btn ghost sm" onClick=${() => api.del(`/api/watchers/${w.id}`)}><${Icon} name="trash" size="sm" />${t('Delete')}</button></div></div>
+        <${Toggle} on=${w.enabled !== false} onChange=${(v) => api.patch(`/api/watchers/${w.id}`, { enabled: v })} label="Enabled" />
+      </div>`)}
+      <div class="item"><div class="txt"><b>Add something to watch</b><small>Just tell your agent in chat, e.g. "Keep an eye on my YouTube channel and TikTok, tell me when a video takes off or a comment needs a reply."</small></div></div>
+    <//>
+  <//>`;
+}
+
 /* ═════════════ Tools & connectors ═════════════ */
 const BUILTINS = [
   ['artifacts', 'Make (artifacts)', 'Pages, dashboards, decks, docs and checklists.'],
@@ -337,6 +373,8 @@ const BUILTINS = [
   ['files', 'Files', 'Read, write and list files on devices.'],
   ['device', 'Device control', 'Open apps/URLs, screenshots, desktop notifications.'],
   ['http', 'HTTP requests', 'Call APIs and webhooks from the server.'],
+  ['computer', 'Computer use (Mac)', 'See the screen and use the mouse and keyboard on the Mac running Covo.'],
+  ['watchers', 'Watchers', 'Keep an eye on social accounts, sites and searches during check-ins.'],
 ];
 
 function McpForm({ cfg, onDone }) {

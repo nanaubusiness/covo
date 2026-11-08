@@ -39,6 +39,13 @@ export function buildContext() {
   const routines = db.data.routines.filter((r) => r.enabled);
   if (routines.length) L.push('Routines: ' + routines.map((r) => `${r.id} "${r.title}" at ${r.time}`).join('; '));
 
+  const watchers = (db.data.watchers || []).filter((w) => w.enabled !== false);
+  if (watchers.length) {
+    L.push('Watchers (check these at check-ins and for the morning brief):');
+    for (const w of watchers) L.push(`- ${w.id} "${w.title}" [${w.kind || 'other'}] target: ${w.target}${w.how ? ` · how: ${truncate(w.how, 200)}` : ''}${w.notify_when ? ` · tell the user when: ${truncate(w.notify_when, 160)}` : ''}\n  last state${w.lastChecked ? ` (${fmtTime(w.lastChecked, tz)})` : ''}: ${w.state ? truncate(w.state, 400) : 'none yet'}`);
+  } else L.push('Watchers: none yet. If you have not asked before, ask once which social accounts and sites to keep an eye on, then add them with watch.');
+  if (db.data.meta?.lastCheckin) L.push(`Last check-in: ${fmtTime(db.data.meta.lastCheckin, tz)}`);
+
   if (db.data.memory.length) {
     L.push('Memory:');
     let used = 0;

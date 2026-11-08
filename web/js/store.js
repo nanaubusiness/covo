@@ -6,7 +6,7 @@ export const store = {
     boot: 'loading', // loading | setup | login | ready | error
     error: '',
     settings: null, provider: 'demo', agentState: 'idle', online: true, version: '',
-    feed: [], topics: [], tasks: [], artifacts: [], approvals: [], memory: [], routines: [],
+    feed: [], topics: [], tasks: [], artifacts: [], approvals: [], memory: [], routines: [], watchers: [],
     devices: [], mcp: [], usage: null, suggestions: [], emailConfigured: false, vapidKey: '', categories: {}, presets: {}, server: {},
     ui: {
       tab: 'chat', drawer: false, profile: false, settings: null, viewer: null, task: null,

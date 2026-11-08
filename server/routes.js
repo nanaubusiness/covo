@@ -94,7 +94,7 @@ function ensureSeeded() {
     (db.data.meta ||= {}).seeded = true;
     if (activeProvider() === 'demo' && !db.data.feed.length) demo.seed();
     if (!db.data.routines.some((x) => /brief/i.test(x.title))) {
-      db.data.routines.push({ id: id('r_'), title: 'Morning brief', prompt: 'Check every active topic and task, update anything stale, then send my morning brief.', time: '07:00', days: [0, 1, 2, 3, 4, 5, 6], enabled: true, mode: 'main', createdAt: now(), lastRun: null });
+      db.data.routines.push({ id: id('r_'), title: 'Morning brief', prompt: 'Look at every watcher (social accounts first) and save fresh snapshots, check every active topic and task, update anything stale, search the web for anything important for my work today, then send my morning brief.', time: '07:00', days: [0, 1, 2, 3, 4, 5, 6], enabled: true, mode: 'main', createdAt: now(), lastRun: null });
     }
     save();
   }
@@ -114,6 +114,8 @@ export function bootstrap() {
     approvals: db.data.approvals.filter((a) => a.status === 'pending' || now() - (a.updatedAt || a.createdAt) < 7 * 86400_000),
     memory: db.data.memory,
     routines: db.data.routines,
+    watchers: db.data.watchers || [],
+    lastCheckin: db.data.meta?.lastCheckin || null,
     devices: listDevices(),
     mcp: mcpStatus(),
     usage: db.data.usage,
@@ -163,6 +165,25 @@ r.patch('/api/topics/:id', async (req, res, p) => {
   for (const k of ['title', 'emoji', 'status', 'archived']) if (b[k] !== undefined) t[k] = b[k];
   t.updatedAt = now(); save(); broadcast('topic.update', t);
   send(res, 200, t);
+});
+
+/* ───────────── watchers & check-ins ───────────── */
+r.post('/api/checkin', (req, res) => {
+  if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to run check-ins.');
+  send(res, 200, core.runCheckin({ force: true }));
+});
+r.patch('/api/watchers/:id', async (req, res, p) => {
+  const b = await readJsonBody(req);
+  const w = (db.data.watchers || []).find((x) => x.id === p.id);
+  if (!w) throw err(404, 'Not found');
+  for (const k of ['title', 'target', 'how', 'notify_when', 'enabled']) if (b[k] !== undefined) w[k] = b[k];
+  w.updatedAt = now(); save(); broadcast('watchers', db.data.watchers);
+  send(res, 200, w);
+});
+r.delete('/api/watchers/:id', (req, res, p) => {
+  db.data.watchers = (db.data.watchers || []).filter((x) => x.id !== p.id);
+  save(); broadcast('watchers', db.data.watchers);
+  send(res, 200, { ok: true });
 });
 
 // Settle / snooze / unread, like T3 Code threads. Body: { action, until? } (until: ms timestamp or ISO date).

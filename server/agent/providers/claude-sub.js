@@ -29,6 +29,7 @@ const SDK = '@anthropic-ai/claude-agent-sdk';
 const ZOD = 'zod';
 const MCP_NAME = 'covo';
 const MCP_PREFIX = `mcp__${MCP_NAME}__`;
+const WEB_TOOLS = ['WebSearch', 'WebFetch'];
 
 let mods = null;
 async function load() {
@@ -164,6 +165,7 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
     }), { alwaysLoad: true })),
   });
 
+  const web = c.webSearch !== false;
   const abort = new AbortController();
   const onAbort = () => abort.abort();
   if (signal) { if (signal.aborted) abort.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
@@ -172,16 +174,21 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
     systemPrompt: system,
     model: c.model || 'claude-opus-5-5',
     ...(effort ? { effort } : {}),
-    tools: [],                         // no Bash/Read/Edit…: Covo's tools only
+    // No Bash/Read/Edit. Only Claude Code's own web search + page reader (they run inside
+    // Claude Code on your plan) and Covo's tools.
+    tools: web ? WEB_TOOLS : [],
     mcpServers: { [MCP_NAME]: server },
     strictMcpConfig: true,
     settingSources: [],                // ignore ~/.claude settings, hooks, plugins, CLAUDE.md
     persistSession: false,
     includePartialMessages: true,
-    maxTurns: 1,
+    maxTurns: web ? 12 : 1,            // room for a few searches before the reply
     permissionMode: 'default',
-    // Every Covo tool call is handed back to Covo; stop the Claude Code turn there.
-    canUseTool: async () => ({ behavior: 'deny', message: 'Handled by Covo.', interrupt: true }),
+    // Web search/fetch run in Claude Code. Every Covo tool call is handed back to Covo:
+    // stop the Claude Code turn there.
+    canUseTool: async (name) => (web && WEB_TOOLS.includes(name)
+      ? { behavior: 'allow' }
+      : { behavior: 'deny', message: 'Handled by Covo.', interrupt: true }),
     cwd: workDir(),
     env: childEnv(),
     abortController: abort,
@@ -191,8 +198,8 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
 
   const userMessage = { type: 'user', message: { role: 'user', content: promptFor(messages) }, parent_tool_use_id: null, session_id: '' };
 
-  let firstId = null;
   const content = [];
+  const searches = [];
   let usage = null;
   let failure = null;
   let model = options.model;
@@ -201,17 +208,17 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
     for await (const ev of sdk.query({ prompt: once(userMessage), options })) {
       if (ev.type === 'stream_event') {
         const e = ev.event;
-        if (e.type === 'message_start') { if (firstId && e.message?.id !== firstId) break; firstId ??= e.message?.id; }
-        else if (e.type === 'content_block_start') onBlockStart?.(e.content_block);
+        if (e.type === 'content_block_start') onBlockStart?.(e.content_block);
         else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') onText?.(e.delta.text);
       } else if (ev.type === 'assistant') {
+        // Several model responses can happen inside one turn when Claude searches the web first;
+        // keep their text, drop the internal web tool calls, and hand Covo tool calls back.
         const msg = ev.message;
-        if (firstId && msg.id && msg.id !== firstId) break; // only the first model response counts
-        firstId ??= msg.id;
         model = msg.model || model;
         for (const b of msg.content || []) {
           if (b.type === 'text') content.push({ type: 'text', text: b.text });
-          else if (b.type === 'tool_use') content.push({ type: 'tool_use', id: b.id, name: b.name.startsWith(MCP_PREFIX) ? b.name.slice(MCP_PREFIX.length) : b.name, input: b.input ?? {} });
+          else if (b.type === 'tool_use' && b.name.startsWith(MCP_PREFIX)) content.push({ type: 'tool_use', id: b.id, name: b.name.slice(MCP_PREFIX.length), input: b.input ?? {} });
+          else if (b.type === 'tool_use' && WEB_TOOLS.includes(b.name)) searches.push(b.input?.query || b.input?.url || '');
         }
         if (msg.usage) usage = msg.usage;
         if (ev.error) failure = ev.error;
@@ -230,6 +237,8 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
   if (signal?.aborted) { const err = new Error('aborted'); err.name = 'AbortError'; throw err; }
   if (!content.length && failure) throw new Error(friendly(typeof failure === 'string' ? failure : JSON.stringify(failure)));
 
+  // Later turns only see the saved transcript (not shown in the chat), so note what was looked up.
+  if (searches.length) content.unshift({ type: 'text', text: `[Looked up on the web this turn: ${searches.filter(Boolean).map((q) => JSON.stringify(q)).join(', ')}]` });
   const hasTools = content.some((b) => b.type === 'tool_use');
   return {
     content: content.length ? content : [{ type: 'text', text: '' }],

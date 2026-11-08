@@ -58,7 +58,7 @@ export const api = {
     set({
       settings: b.settings, provider: b.provider, agentState: b.state, version: b.version,
       feed: b.feed, topics: b.topics, tasks: b.tasks, artifacts: b.artifacts, approvals: b.approvals,
-      memory: b.memory, routines: b.routines, devices: b.devices, mcp: b.mcp, usage: b.usage,
+      memory: b.memory, routines: b.routines, watchers: b.watchers || [], lastCheckin: b.lastCheckin || null, devices: b.devices, mcp: b.mcp, usage: b.usage,
       suggestions: b.suggestions || [], emailConfigured: b.emailConfigured, vapidKey: b.vapidKey,
       categories: b.categories, presets: b.presets, server: b.server, integrations: b.integrations || {}, boot: 'ready',
     });
@@ -99,6 +99,7 @@ function handleEvent({ type, data }) {
     case 'approval.upsert': mutate((s) => { s.approvals = upsert(s.approvals, data); }); break;
     case 'memory': set({ memory: data }); break;
     case 'routines': set({ routines: data }); break;
+    case 'watchers': set({ watchers: data }); break;
     case 'devices': set({ devices: data }); break;
     case 'mcp': set({ mcp: data }); break;
     case 'integrations': set({ integrations: data }); break;

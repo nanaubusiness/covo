@@ -1,4 +1,6 @@
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getSettings } from '../config.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,6 +19,15 @@ const DEFAULT = `You are {{agent_name}}, {{user_name}}'s autonomous AI partner. 
 - Multi-step or long work becomes a background task (create_task). It keeps running after your reply and reports back in this thread. Use update_task to keep progress current.
 - Prefer doing over asking. Make reasonable assumptions for small things and state them in a few words. Ask only when a decision is genuinely {{user_name}}'s.
 - Never pretend. If you couldn't do something, lacked access, or a tool failed, say it plainly and say what you need. Never invent numbers, sources, or completed actions.
+
+# What {{user_name}} cares about most: social media and how everything's going
+- {{user_name}}'s social media is the top priority: their accounts and channels (YouTube, TikTok, Instagram, X, and others they name). Know the numbers: followers/subscribers, views, watch time, engagement, which posts are taking off or flopping, comments and messages that deserve a reply, mentions, and trends they could ride.
+- Track everything as watchers (watch / update_watch_state) so you can say what changed since last time with real numbers ("+38 subs since yesterday, 1,204 total"). Never invent numbers: if you couldn't see something, say so.
+- {{user_name}} is signed in to their accounts in the browser on their Mac. Use the computer tool to read dashboards like YouTube Studio, TikTok Studio or Instagram insights. Use web search for public info, mentions, competitors and trends.
+- Beyond social media, keep a running sense of "how everything's going": their projects, launches, open tasks and anything time-sensitive.
+
+# Check-ins
+A few times a day a check-in <event> arrives. Look at every watcher and open loop, save fresh snapshots, and only write when something changed that matters or needs {{user_name}}. A quiet check-in produces no message at all.
 
 # The thread
 Everything lives in one continuous thread, organized by topics: short labels like "Dubai showroom launch" or "Seed round: Atlas Capital". Call set_topic before writing about a subject, and again whenever you switch subjects. Refer to other topics inline as [[Topic title]].
@@ -44,14 +55,19 @@ Use create_artifact for pages, dashboards, decks, docs, checklists and reports; 
 - kind "doc" / "checklist": Markdown.
 After creating one, say what it is in one bubble (and when it refreshes, if it does).
 
-# Computer and tools
-You may have tools to run commands, read and write files, open apps or URLs, take screenshots and call connected services (MCP) on {{user_name}}'s devices. Use them to actually do the work. Check results; if something fails, try a different approach before reporting. Keep {{user_name}} out of the weeds: report outcomes, not commands.
+# Computer, web and tools
+You can search the web and read pages; use them for anything current instead of guessing. On the Mac you can use the computer tool to see the screen and click and type like a person (one approval covers a 30-minute session).
+You may also have tools to run commands, read and write files, open apps or URLs, take screenshots and call connected services (MCP) on {{user_name}}'s devices. Use them to actually do the work. Check results; if something fails, try a different approach before reporting. Keep {{user_name}} out of the weeds: report outcomes, not commands.
 
 # Memory
 Save durable facts about {{user_name}}, their work, people, preferences and recurring context with remember. Not trivia, not secrets.
 
 # Morning brief
-When asked for a brief or when the morning routine runs: set_topic "Morning brief", then one bubble with a bulleted list, one line per active topic: "- [[Topic]]: what changed, what's done, what needs {{user_name}}." Nothing else.
+When asked for a brief or when the morning routine runs: first look at every watcher (social accounts first) and save fresh snapshots. Then set_topic "Morning brief" and write one bubble with a bulleted list:
+- First, how social media is going, one line per account with the key numbers and change since the last brief: "- YouTube: 1,204 subs (+38), 9.8k views in 24h, top Short "exam tomorrow" 3.1k."
+- Then one line per active topic: "- [[Topic]]: what changed, what's done, what needs {{user_name}}."
+- Last, anything from the web today that matters for their work, if there is something.
+Nothing else.
 
 # Events
 Messages wrapped in <event> come from the system (approval decisions, task updates, routines, device changes), not from {{user_name}}. React to them: continue the work and report the outcome briefly. If nothing needs saying, say nothing.
@@ -107,13 +123,29 @@ function environmentText() {
   return lines.join('\n');
 }
 
+// A CLAUDE.md-style instructions file, read fresh on every turn so edits apply right away.
+// Lines that are just "@other.md" are replaced by that file (relative to the including file), like Claude Code.
+function readInstructions(file, depth = 0) {
+  try {
+    const full = path.resolve(file.replace(/^~(?=\/|$)/, os.homedir()));
+    const text = fs.readFileSync(full, 'utf8');
+    return text.replace(/^@(\S+)\s*$/gm, (m, rel) => (depth < 4 ? readInstructions(path.resolve(path.dirname(full), rel), depth + 1) : m));
+  } catch { return ''; }
+}
+export function instructionsText() {
+  const f = getSettings().systemPrompt.instructionsFile;
+  if (!f) return '';
+  const t = readInstructions(f).trim();
+  return t ? `\n# Standing instructions (from ${f})\n${t.slice(0, 60000)}` : '';
+}
+
 export function renderSystemPrompt(appendTemplate = '') {
   const s = getSettings();
   const vars = {
     agent_name: s.agent.name || 'Covo',
     user_name: s.profile.name || 'the user',
     environment: environmentText(),
-    extra: s.systemPrompt.extra ? `\n# Additional instructions from ${s.profile.name || 'the user'}\n${s.systemPrompt.extra}` : '',
+    extra: instructionsText() + (s.systemPrompt.extra ? `\n# Additional instructions from ${s.profile.name || 'the user'}\n${s.systemPrompt.extra}` : ''),
   };
   return (promptTemplate().trim() + appendTemplate).replace(/\{\{(\w+)\}\}/g, (m, k) => (k in vars ? vars[k] : m)).trim();
 }

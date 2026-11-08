@@ -17,6 +17,7 @@ const EMPTY = () => ({
   approvals: [],     // pending / decided approvals
   memory: [],        // long-term facts
   routines: [],      // scheduled prompts (morning brief…)
+  watchers: [],      // things the agent keeps an eye on during check-ins (social accounts, sites, searches)
   pushSubs: [],      // web push subscriptions
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, requests: 0 },
   meta: { seeded: false },

@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS = {
     },
     // Your Claude Pro/Max plan, through the official Claude Agent SDK + Claude Code on this computer.
     // Effort uses provider.anthropic.effort / taskEffort.
-    claudeSub: { model: 'claude-opus-5-5', claudePath: '' },
+    claudeSub: { model: 'claude-opus-5-5', claudePath: '', webSearch: true },
     openai: { baseURL: 'http://localhost:11434/v1', apiKey: '', model: 'llama3.1', maxTokens: 4096 },
   },
   agent: {
@@ -48,7 +48,7 @@ export const DEFAULT_SETTINGS = {
     autonomy: 'balanced',     // supervised | balanced | autonomous
     approvals: {              // ask | auto | block
       messages: 'ask', payments: 'ask', shell: 'ask', files_write: 'ask', files_read: 'auto',
-      network: 'auto', device: 'ask', mcp: 'ask',
+      network: 'auto', device: 'ask', mcp: 'ask', computer: 'ask',
     },
     approvalExpiryMin: 30,
     maxSteps: 40,
@@ -57,10 +57,12 @@ export const DEFAULT_SETTINGS = {
     progressBubbles: true,
     autoMemory: true,
     proactive: true,
+    // Duet-style check-ins: look at every watcher and open loop, speak up only when something needs you.
+    checkins: { enabled: true, everyMin: 120, from: '08:00', to: '22:00' },
   },
-  systemPrompt: { custom: '', preset: 'default', extra: '' },
+  systemPrompt: { custom: '', preset: 'default', extra: '', instructionsFile: '' }, // instructionsFile: a CLAUDE.md-style file read every turn
   tools: {
-    builtins: { shell: true, files: true, http: true, artifacts: true, tasks: true, memory: true, routines: true, notify: true, email: true, device: true },
+    builtins: { shell: true, files: true, http: true, artifacts: true, tasks: true, memory: true, routines: true, notify: true, email: true, device: true, computer: true, watchers: true },
     serverExecution: process.env.COVO_DESKTOP === '1' || process.platform === 'win32' || process.platform === 'darwin',
     workDir: path.join(DATA_DIR, 'workspace'),
     shellTimeoutSec: 120,

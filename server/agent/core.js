@@ -124,18 +124,21 @@ async function pump() {
       const ac = new AbortController();
       main.abort = ac;
       const routine = items.find((i) => i.routine)?.routine;
+      const checkin = items.some((i) => i.checkin);
       const ctx = { scope: 'main', topicId: lastTopicId(), turnId: id('turn_'), hooks };
       try {
         const r = await runLoop({
           transcript: db.data.transcript,
           system: renderSystemPrompt(),
           ctx,
-          effort: routine ? s.provider.anthropic.taskEffort : s.provider.anthropic.effort,
+          effort: routine || checkin ? s.provider.anthropic.taskEffort : s.provider.anthropic.effort,
           signal: ac.signal,
           // "Working" follows the topic the agent is on (set_topic can switch it mid-turn).
           onStateChange: (st) => { setState(st); setMainWorking(ctx.topicId); },
         });
         if (routine) afterRoutine(routine, r);
+        // A check-in that found something worth saying pings your phone; a quiet one stays silent.
+        if (checkin && r.posted.length) notify({ title: s.agent.name || 'Covo', body: r.posted[0].split('\n\n')[0].replace(/\[\[|\]\]/g, '').slice(0, 180), kind: 'task', url: '/?tab=chat' });
       } catch (e) {
         log.error('turn failed', e);
         addFeed({ kind: 'error', text: friendlyError(e), topicId: ctx.topicId });
@@ -287,6 +290,27 @@ function afterRoutine(r, result) {
     const first = (result.posted[0] || '').split('\n\n')[0];
     if (first) notify({ title: r.title, body: first.slice(0, 180), kind: 'task' });
   }
+}
+
+/* ---------------- check-ins (Duet-style) ---------------- */
+// Every few hours during the day: look at every watcher and open loop, and speak up only
+// when something changed that matters. Nothing worth saying → no message, no notification.
+export function runCheckin({ force = false } = {}) {
+  if (activeProvider() === 'demo') return { ok: false, reason: 'demo' };
+  if (!force && (main.busy || main.queue.length)) return { ok: false, reason: 'busy' };
+  const watchers = (db.data.watchers || []).filter((w) => w.enabled !== false);
+  const open = db.data.tasks.some((t) => ['running', 'queued', 'needs_you'].includes(t.status)) || db.data.approvals.some((a) => a.status === 'pending') || db.data.topics.some((t) => !t.settledAt && !t.snoozedUntil && t.status !== 'done');
+  if (!force && !watchers.length && !open) return { ok: false, reason: 'nothing to check' };
+  (db.data.meta ||= {}).lastCheckin = now();
+  save();
+  enqueue({
+    type: 'event', source: 'checkin', checkin: true,
+    text: `Check-in. Quietly go through:
+1. Every watcher listed in <context>: look at it the way its "how" says (web search, reading pages, the computer tool on the Mac for logged-in dashboards, connected services). Compare with its saved state and save the new snapshot with update_watch_state, even if nothing changed.
+2. Open topics, tasks, approvals and deadlines: anything slipping, blocked or waiting on ${getSettings().profile.name || 'the user'}?
+Then speak only if something changed that matters or needs them (use each watcher's notify_when): set_topic, then 1-3 short bubbles with the numbers. If nothing is worth saying, reply with nothing at all: no "all quiet" message.`,
+  });
+  return { ok: true, watchers: watchers.length };
 }
 
 /* ---------------- maintenance ---------------- */

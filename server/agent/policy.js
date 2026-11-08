@@ -16,6 +16,7 @@ export const CATEGORIES = {
   files_read: 'Read files',
   network: 'Web & HTTP requests',
   device: 'Control devices (open apps, screenshots)',
+  computer: 'Use your Mac (see the screen, click, type)',
   mcp: 'Connected services (MCP)',
 };
 
