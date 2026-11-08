@@ -120,7 +120,7 @@ export function ModelSection() {
   const active = useStore((s) => s.provider);
   const [test, setTest] = useState(null);
   const [models, setModels] = useState([]);
-  const a = p.anthropic, o = p.openai;
+  const a = p.anthropic, o = p.openai, cs = p.claudeSub || {};
   const setP = (patch) => saveSettings({ provider: patch });
   const runTest = async () => { setTest({ busy: true }); try { setTest(await api.post('/api/settings/test')); } catch (e) { setTest({ ok: false, error: e.message }); } };
   const modelOpts = [...CLAUDE_MODELS, ...models.filter((m) => !CLAUDE_MODELS.some((c) => c.id === m.id)).map((m) => ({ id: m.id, name: m.name || m.id }))];
@@ -128,9 +128,17 @@ export function ModelSection() {
   return html`<${Page} title=${t('Model & provider')} desc="The brain behind your agent. Claude is recommended; any OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter…) also works.">
     <${Group}>
       <${Item} title="Provider" desc=${active === 'demo' ? 'Currently running the scripted demo.' : `Active: ${active}`}>
-        <${Seg} value=${p.type} onChange=${(v) => setP({ type: v })} options=${[{ id: 'anthropic', label: 'Claude' }, { id: 'openai', label: 'OpenAI-compatible' }, { id: 'demo', label: 'Demo' }]} />
+        <${Seg} value=${p.type} onChange=${(v) => setP({ type: v })} options=${[...(api.isLocal() ? [] : [{ id: 'claude-sub', label: 'Claude plan' }]), { id: 'anthropic', label: 'Claude API' }, { id: 'openai', label: 'OpenAI-compatible' }, { id: 'demo', label: 'Demo' }]} />
       <//>
     <//>
+    ${p.type === 'claude-sub' && html`
+      <${Group} title="Your Claude plan (Pro / Max)">
+        <div class="item"><div class="txt"><b>Uses the Claude Code you're signed in to on this computer</b><small>Covo runs Anthropic's official Claude Agent SDK, which starts Claude Code with your own claude.ai login, so replies count against your Claude plan instead of an API key. Covo never sees or stores your login. If the test below fails, run <code>claude</code> in a terminal on this computer and sign in. For your own personal use only: Anthropic's <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener">terms</a> don't allow sharing your plan with other people.</small></div></div>
+        <${SelectItem} title="Model" value=${cs.model} onChange=${(v) => setP({ claudeSub: { model: v } })} options=${CLAUDE_MODELS.filter((m) => !m.id.includes('fable'))} width=${220} />
+        <${SelectItem} title="Effort — chat" value=${a.effort} onChange=${(v) => setP({ anthropic: { effort: v } })} options=${['low', 'medium', 'high', 'xhigh', 'max']} width=${140} />
+        <${SelectItem} title="Effort — background tasks & routines" desc="Higher effort uses more of your plan's limits." value=${a.taskEffort} onChange=${(v) => setP({ anthropic: { taskEffort: v } })} options=${['low', 'medium', 'high', 'xhigh', 'max']} width=${140} />
+        <${TextItem} title="Claude Code path" desc="Advanced: leave empty to use the copy that ships with the Agent SDK." value=${cs.claudePath} placeholder="/usr/local/bin/claude" onSave=${(v) => setP({ claudeSub: { claudePath: v } })} width=${260} />
+      <//>`}
     ${p.type === 'anthropic' && html`
       <${Group} title="Anthropic (Claude)">
         <${SecretItem} title="API key" desc=${html`Use your own key from <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. It's stored only on your device/server and sent only to the API. Your use of Claude is subject to Anthropic's <a href="https://www.anthropic.com/legal/aup" target="_blank" rel="noopener">Usage Policy</a> and terms.`} value=${a.apiKey} placeholder="sk-ant-…" onSave=${(v) => setP({ anthropic: { apiKey: v } })} />

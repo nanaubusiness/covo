@@ -6,6 +6,7 @@ import { broadcast } from '../bus.js';
 import { getSettings, activeProvider } from '../config.js';
 import { anthropicTurn, Anthropic } from './providers/anthropic.js';
 import { openaiTurn } from './providers/openai.js';
+import { claudeSubTurn } from './providers/claude-sub.js';
 import { buildTools, toResultBlocks } from './tools/index.js';
 import { decide } from './policy.js';
 
@@ -55,6 +56,7 @@ export function windowed(transcript, max) {
 
 async function callModel(args) {
   const p = activeProvider();
+  if (p === 'claude-sub') return claudeSubTurn(args);
   if (p === 'anthropic') return anthropicTurn(args);
   if (p === 'openai') return openaiTurn(args);
   throw new Error('No model configured');
