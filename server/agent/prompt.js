@@ -158,3 +158,9 @@ You are now running as a background worker on this task. {{user_name}} is not wa
 - Goal: ${task.goal}
 - Topic: ${task.topicTitle || task.title}
 Work autonomously until the goal is met. Call update_task whenever progress changes (use counts like done/total when it fits) and to log notable steps. Use report_to_user for short updates that matter to {{user_name}} (results, risks, decisions). If you need a decision, use ask_user or request_approval and stop. When finished, call complete_task with a one-sentence outcome.`;
+
+export const CHAT_ADDENDUM = (task) => `
+
+# Separate chat
+This is a separate chat with {{user_name}}, running alongside the main thread (other Duet chats may be running too). {{user_name}} reads this chat directly: your text here is what they see, so just reply as you would in the main thread. Do the work with your tools, then answer here. Don't use report_to_user, ask_user or complete_task: ask questions in your reply, and this chat stays open for their next message. Use report_to_user only if something also belongs in the main thread.
+- Chat: ${task.title}`;

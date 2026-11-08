@@ -216,6 +216,12 @@ r.post('/api/tasks', async (req, res) => {
   if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to run real tasks.');
   send(res, 200, core.tasks.createTask({ title: b.title, goal: b.goal, total: b.total }, { scope: 'user' }));
 });
+r.post('/api/chats', async (req, res) => {
+  const b = await readJsonBody(req);
+  if (!b.message?.trim()) throw err(400, 'message is required');
+  if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to start chats.');
+  send(res, 200, publicTask(core.tasks.createChat({ message: b.message.trim(), title: b.title })));
+});
 r.post('/api/tasks/:id/action', async (req, res, p) => {
   const b = await readJsonBody(req);
   const t = db.data.tasks.find((x) => x.id === p.id);

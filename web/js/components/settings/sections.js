@@ -206,9 +206,6 @@ export function AgentSection() {
     <${Group} title="Behavior">
       <${ToggleItem} title="Show progress as bubbles" desc="Display the agent's between-step notes in the thread." value=${a.progressBubbles} onChange=${(v) => set({ progressBubbles: v })} />
       <${ToggleItem} title="Remember automatically" desc="Let the agent save durable facts to Memory." value=${a.autoMemory} onChange=${(v) => set({ autoMemory: v })} />
-      <${TextItem} title="Max steps per turn" desc="Safety limit on tool calls in one turn." type="number" value=${a.maxSteps} onSave=${(v) => set({ maxSteps: v })} width=${100} />
-      <${TextItem} title="Background tasks at once" type="number" value=${a.maxConcurrentTasks} onSave=${(v) => set({ maxConcurrentTasks: v })} width=${100} />
-      <${TextItem} title="Context window (messages)" desc="How much of the thread is sent each turn." type="number" value=${a.contextMessages} onSave=${(v) => set({ contextMessages: v })} width=${100} />
     <//>
     ${warn && html`<${Confirm} title="Turn on Autonomous mode?" danger=${false} confirm="I understand, turn it on"
       body="The agent will run commands, change files, call services and use connected devices without asking you first (payments and messages sent as you still ask). You are responsible for what it does. Use it only with devices and accounts you can afford to have changed, and keep backups."

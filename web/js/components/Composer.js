@@ -64,7 +64,7 @@ export function Suggestions() {
   return html`<div class="suggestions">${list.map((s) => html`<button onClick=${() => sendMessage(s)}>${s}</button>`)}</div>`;
 }
 
-export function Composer({ autoFocus }) {
+export function Composer({ autoFocus, onSend, placeholder }) {
   const [text, setText] = useState('');
   const [atts, setAtts] = useState([]);
   const [uploading, setUploading] = useState(0);
@@ -94,7 +94,7 @@ export function Composer({ autoFocus }) {
   const submit = () => {
     if (uploading) return;
     if (!text.trim() && !atts.length) return;
-    sendMessage(text, atts);
+    if (onSend) onSend(text.trim()); else sendMessage(text, atts);
     setText(''); setAtts([]);
     stopped.current = true; rec.current?.stop();
   };
@@ -145,9 +145,9 @@ export function Composer({ autoFocus }) {
   return html`<div>
     ${atts.length > 0 && html`<div class="composer-atts">${atts.map((a, i) => html`<span class="file-pill"><${Icon} name=${a.type?.startsWith('image/') ? 'image' : 'file'} size="sm" /><span>${a.name}</span><button class="icon-btn sm" aria-label=${t('Delete')} onClick=${() => setAtts(atts.filter((_, j) => j !== i))}><${Icon} name="x" size="sm" /></button></span>`)}</div>`}
     <div class="composer" onDragOver=${(e) => e.preventDefault()} onDrop=${(e) => { e.preventDefault(); onFiles([...e.dataTransfer.files]); }}>
-      <button class="icon-btn" aria-label=${t('Attach')} title=${t('Attach')} onClick=${() => fileIn.current.click()}><${Icon} name=${uploading ? 'refresh' : 'plus'} /></button>
+      ${!onSend && html`<button class="icon-btn" aria-label=${t('Attach')} title=${t('Attach')} onClick=${() => fileIn.current.click()}><${Icon} name=${uploading ? 'refresh' : 'plus'} /></button>`}
       <input type="file" multiple hidden ref=${fileIn} onChange=${(e) => { onFiles([...e.target.files]); e.target.value = ''; }} />
-      <textarea ref=${ta} rows="1" placeholder=${t('Message')} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste} aria-label=${t('Message')} dir="auto"></textarea>
+      <textarea ref=${ta} rows="1" placeholder=${placeholder || t('Message')} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste} aria-label=${t('Message')} dir="auto"></textarea>
       <button class=${cx('icon-btn', dictating && 'mic-on')} aria-label=${t('Dictate')} title=${t('Dictate')} onClick=${dictate}><${Icon} name="mic" /></button>
       ${hasContent
         ? html`<button class="send-btn" aria-label=${t('Send')} onClick=${submit}><${Icon} name="up" /></button>`

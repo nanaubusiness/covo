@@ -54,3 +54,12 @@ test('check-in API: needs a real model; watchers API edits and deletes', async (
     assert.equal((await s.req('PATCH', '/api/watchers/nope', { enabled: false })).status, 404);
   } finally { await s.stop(); }
 });
+
+test('separate chats: POST /api/chats needs a real model; chats stay out of the Tasks counts', async () => {
+  const s = await startServer();
+  try {
+    await s.req('POST', '/api/auth/setup', { password: 'secret123', name: 'Sara' });
+    assert.equal((await s.req('POST', '/api/chats', { message: 'hi' })).status, 400, 'demo mode cannot start chats');
+    assert.equal((await s.req('POST', '/api/chats', {})).status, 400);
+  } finally { await s.stop(); }
+});

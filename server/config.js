@@ -51,9 +51,9 @@ export const DEFAULT_SETTINGS = {
       network: 'auto', device: 'ask', mcp: 'ask', computer: 'ask',
     },
     approvalExpiryMin: 30,
-    maxSteps: 40,
-    maxConcurrentTasks: 3,
-    contextMessages: 120,
+    maxSteps: 0,              // 0 = no limit
+    maxConcurrentTasks: 0,    // 0 = no limit on background tasks + separate chats at once
+    contextMessages: 0,       // 0 = send everything (on the Claude plan, Claude Code compacts long chats itself)
     progressBubbles: true,
     autoMemory: true,
     proactive: true,

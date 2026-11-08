@@ -12,6 +12,7 @@ import { saveSettings } from './settings/common.js';
 import { needsCount } from '../needs.js';
 import { transcriptOf } from '../lib/speech.js';
 import { TopicList } from './Topics.js';
+import { ChatList } from './Chat.js';
 export { TopicList };
 
 /* ───────────── shared: search ───────────── */
@@ -48,7 +49,7 @@ export function Drawer() {
   const close = () => setUI({ drawer: false });
   const needs = needsCount(s);
   const online = s.devices.filter((d) => d.online && d.enabled).length;
-  const nav = (tab) => () => { setUI({ tab, drawer: false, topicFilter: null }); };
+  const nav = (tab) => () => { setUI({ tab, drawer: false, topicFilter: null, chat: null }); };
   return html`<div class="overlay" onClick=${close}></div>
   <nav class="drawer" aria-label="Menu">
     <div class="row" style="padding:12px 12px 8px"><${Orb} size=${34} /><b class="serif grow" style="font-size:var(--fs-xl);font-weight:500">${s.settings?.agent?.name || 'Covo'}</b>
@@ -60,10 +61,11 @@ export function Drawer() {
         <b style="font-size:var(--fs-sm)">${t('Demo mode')}</b><div class="hint" style="color:var(--ink-2);margin:2px 0 8px">You're watching a scripted demo. Connect Claude to run your own agent.</div>
         <button class="btn primary sm" onClick=${() => setUI({ drawer: false, settings: 'model' })}>${t('Connect a model')}</button></div>`}
       <div class="nav">
-        <button class=${s.ui.tab === 'chat' ? 'on' : ''} onClick=${nav('chat')}><${Icon} name="chat" />${t('Chat')}</button>
+        <button class=${s.ui.tab === 'chat' && !s.ui.chat ? 'on' : ''} onClick=${nav('chat')}><${Icon} name="chat" />${t('Chat')}</button>
         <button class=${s.ui.tab === 'tasks' ? 'on' : ''} onClick=${nav('tasks')}><${Icon} name="tasks" />${t('Tasks')}${needs > 0 && html`<span class="count">${needs}</span>`}</button>
         <button class=${s.ui.tab === 'make' ? 'on' : ''} onClick=${nav('make')}><${Icon} name="make" />${t('Make')}</button>
       </div>
+      <div class="side-sec"><h4>${t('Chats')}</h4><${ChatList} onPick=${close} /></div>
       <div class="side-sec"><h4>${t('Topics')}</h4><${TopicList} onPick=${close} /></div>
       <div class="side-sec"><h4>${t('Routines')}</h4>
         ${s.routines.map((x) => html`<button class="topic-item" onClick=${() => setUI({ drawer: false, settings: 'routines' })}><${Icon} name="clock" size="sm" /><span class="t">${x.title}</span><span class="muted" style="font-size:var(--fs-xs)">${x.enabled ? x.time : 'off'}</span></button>`)}
@@ -91,10 +93,11 @@ export function Sidebar() {
     <div class="scroll" style="flex:1;min-height:0">
       ${r ? html`<div style="padding:0 8px"><${SearchResults} r=${r} done=${() => setQ('')} /></div>` : html`
       <div class="nav">
-        <button class=${s.ui.tab === 'chat' ? 'on' : ''} onClick=${() => setUI({ tab: 'chat', topicFilter: null })}><${Icon} name="chat" />${t('Chat')}</button>
+        <button class=${s.ui.tab === 'chat' && !s.ui.chat ? 'on' : ''} onClick=${() => setUI({ tab: 'chat', topicFilter: null, chat: null })}><${Icon} name="chat" />${t('Chat')}</button>
         <button class=${s.ui.tab === 'tasks' ? 'on' : ''} onClick=${() => setUI({ tab: 'tasks' })}><${Icon} name="tasks" />${t('Tasks')}${needs > 0 && html`<span class="count">${needs}</span>`}</button>
         <button class=${s.ui.tab === 'make' ? 'on' : ''} onClick=${() => setUI({ tab: 'make' })}><${Icon} name="make" />${t('Make')}</button>
       </div>
+      <div class="side-sec"><h4>${t('Chats')}</h4><${ChatList} /></div>
       <div class="side-sec"><h4>${t('Topics')}</h4><${TopicList} /></div>
       <div class="side-sec"><h4>${t('Routines')}<button class="icon-btn sm" aria-label="Edit routines" onClick=${() => setUI({ settings: 'routines' })}><${Icon} name="plus" size="sm" /></button></h4>
         ${s.routines.map((x) => html`<button class="topic-item" onClick=${() => setUI({ settings: 'routines' })}><${Icon} name="clock" size="sm" /><span class="t">${x.title}</span><span class="muted" style="font-size:var(--fs-xs)">${x.enabled ? x.time : 'off'}</span></button>`)}

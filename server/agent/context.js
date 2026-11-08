@@ -18,7 +18,7 @@ export function buildContext() {
   const tasks = db.data.tasks.filter((t) => !['done', 'cancelled'].includes(t.status) || Date.now() - t.updatedAt < 86400_000).slice(0, 15);
   if (tasks.length) {
     L.push('Tasks:');
-    for (const t of tasks) L.push(`- ${t.id} "${t.title}" ${t.status}${t.progress ? ` ${t.progress.done}/${t.progress.total}` : ''}${t.note ? ` — ${truncate(t.note, 140)}` : ''}${t.question ? ` — waiting for answer: ${truncate(t.question, 160)}` : ''}`);
+    for (const t of tasks) L.push(`- ${t.id} "${t.title}"${t.mode === 'chat' ? ' [separate chat]' : ''} ${t.status}${t.progress ? ` ${t.progress.done}/${t.progress.total}` : ''}${t.note ? ` — ${truncate(t.note, 140)}` : ''}${t.question ? ` — waiting for answer: ${truncate(t.question, 160)}` : ''}`);
   }
 
   const pending = db.data.approvals.filter((a) => a.status === 'pending');
