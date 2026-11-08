@@ -8,6 +8,7 @@ import { saveSettings } from './settings/common.js';
 
 // Model + effort right under the message box (like T3 Code), for Claude plan / Claude API.
 const MODELS = [
+  { id: 'claude-fable-5-1', name: 'Fable 5.1' },
   { id: 'claude-opus-5-5', name: 'Opus 5.5' },
   { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5' },
   { id: 'claude-haiku-5-5', name: 'Haiku 5.5' },
@@ -31,9 +32,17 @@ function ModelPicker() {
   const label = MODELS.find((m) => m.id === model)?.name || model.replace(/^claude-/, '');
   const pick = (patch) => { saveSettings({ provider: patch }); setOpen(null); };
   return html`<div class="model-picker" ref=${ref}>
-    <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'model' ? null : 'model')}><${Icon} name="sparkle" size="sm" />${label}${active === 'claude-sub' ? html`<small>plan</small>` : ''}<${Icon} name="down" size="sm" /></button>
+    <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'model' ? null : 'model')}><${Icon} name="sparkle" size="sm" />${label}<small>${active === 'claude-sub' ? 'subscription' : 'API key'}</small><${Icon} name="down" size="sm" /></button>
     <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'effort' ? null : 'effort')}><${Icon} name="brain" size="sm" />${(EFFORTS.find(([id]) => id === effort) || [, effort])[1]}<${Icon} name="down" size="sm" /></button>
-    ${open === 'model' && html`<div class="topic-menu mp-menu" role="menu">${MODELS.map((m) => html`<button role="menuitem" onClick=${() => pick({ [key]: { model: m.id } })}><span class="grow">${m.name}</span>${m.id === model && html`<${Icon} name="check" size="sm" />`}</button>`)}</div>`}
+    ${open === 'model' && html`<div class="topic-menu mp-menu" role="menu">
+      <div class="menu-label">Model</div>
+      ${MODELS.map((m) => html`<button role="menuitem" onClick=${() => pick({ [key]: { model: m.id } })}><span class="grow">${m.name}</span>${m.id === model && html`<${Icon} name="check" size="sm" />`}</button>`)}
+      <hr /><div class="menu-label">Runs on</div>
+      <button role="menuitem" onClick=${() => pick({ type: 'claude-sub' })}><span class="grow">Your Claude subscription</span>${active === 'claude-sub' && html`<${Icon} name="check" size="sm" />`}</button>
+      ${p.anthropic?.apiKey
+        ? html`<button role="menuitem" onClick=${() => pick({ type: 'anthropic' })}><span class="grow">Anthropic API key</span>${active === 'anthropic' && html`<${Icon} name="check" size="sm" />`}</button>`
+        : html`<button role="menuitem" onClick=${() => { setOpen(null); setUI({ settings: 'model' }); }}><span class="grow">Add an API key…</span></button>`}
+    </div>`}
     ${open === 'effort' && html`<div class="topic-menu mp-menu" style="left:96px" role="menu"><div class="menu-label">Effort for chat replies</div>${EFFORTS.map(([id, name]) => html`<button role="menuitem" onClick=${() => pick({ anthropic: { effort: id } })}><span class="grow">${name}</span>${id === effort && html`<${Icon} name="check" size="sm" />`}</button>`)}</div>`}
   </div>`;
 }

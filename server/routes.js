@@ -44,7 +44,9 @@ const r = router;
 
 /* ───────────── auth (public) ───────────── */
 // Desktop app (desktop/main.cjs): the app window signs itself in with a per-launch key.
-const DESKTOP_KEY = process.env.COVO_DESKTOP_KEY || '';
+// Desktop sign-in key: from the in-process desktop app, or (for a desktop app attaching to an
+// always-on server on the same computer) from DATA_DIR/desktop.key, readable only by this user.
+const DESKTOP_KEY = process.env.COVO_DESKTOP_KEY || (() => { try { return fs.readFileSync(path.join(DATA_DIR, 'desktop.key'), 'utf8').trim(); } catch { return ''; } })();
 const isDesktopReq = (req) => !!DESKTOP_KEY && !!authFromReq(req)?.session?.desktop;
 
 r.get('/api/auth/status', (req, res) => send(res, 200, { setup: A.isSetup(), authed: !!authFromReq(req), version: VERSION, appName: getSettings().agent.name || 'Covo', desktop: isDesktopReq(req), hasPassword: A.hasPassword() }), { public: true });

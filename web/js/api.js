@@ -62,6 +62,7 @@ export const api = {
       suggestions: b.suggestions || [], emailConfigured: b.emailConfigured, vapidKey: b.vapidKey,
       categories: b.categories, presets: b.presets, server: b.server, integrations: b.integrations || {}, boot: 'ready',
     });
+    if (b.settings?.agent?.name) document.title = b.settings.agent.name; // window/tab title follows the agent's name
     return b;
   },
 

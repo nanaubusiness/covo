@@ -39,7 +39,8 @@ await esbuild.build({
 // Relative URLs so it works from any sub-path (GitHub Pages) or file-based WebViews.
 let html = fs.readFileSync(path.join(out, 'index.html'), 'utf8');
 html = html.replace(/(href|src)="\/(?!\/)/g, '$1="./').replace("from '/js/main.js'", "from './js/main.js'");
-html = html.replace('<script type="module">', '<script>window.COVO_STANDALONE = true;</script>\n  <script type="module">');
+const defaultServer = process.env.COVO_DEFAULT_SERVER ? `window.COVO_DEFAULT_SERVER = ${JSON.stringify(process.env.COVO_DEFAULT_SERVER)};` : '';
+html = html.replace('<script type="module">', `<script>window.COVO_STANDALONE = true;${defaultServer}</script>\n  <script type="module">`);
 fs.writeFileSync(path.join(out, 'index.html'), html);
 
 fs.mkdirSync(path.join(out, 'legal'), { recursive: true });

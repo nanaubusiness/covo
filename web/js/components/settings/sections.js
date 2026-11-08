@@ -134,7 +134,7 @@ export function ModelSection() {
     ${p.type === 'claude-sub' && html`
       <${Group} title="Your Claude plan (Pro / Max)">
         <div class="item"><div class="txt"><b>Uses the Claude Code you're signed in to on this computer</b><small>Covo runs Anthropic's official Claude Agent SDK, which starts Claude Code with your own claude.ai login, so replies count against your Claude plan instead of an API key. Covo never sees or stores your login. If the test below fails, run <code>claude</code> in a terminal on this computer and sign in. For your own personal use only: Anthropic's <a href="https://code.claude.com/docs/en/legal-and-compliance" target="_blank" rel="noopener">terms</a> don't allow sharing your plan with other people.</small></div></div>
-        <${SelectItem} title="Model" value=${cs.model} onChange=${(v) => setP({ claudeSub: { model: v } })} options=${CLAUDE_MODELS.filter((m) => !m.id.includes('fable'))} width=${220} />
+        <${SelectItem} title="Model" value=${cs.model} onChange=${(v) => setP({ claudeSub: { model: v } })} options=${CLAUDE_MODELS} width=${220} />
         <${SelectItem} title="Effort — chat" value=${a.effort} onChange=${(v) => setP({ anthropic: { effort: v } })} options=${['low', 'medium', 'high', 'xhigh', 'max']} width=${140} />
         <${SelectItem} title="Effort — background tasks & routines" desc="Higher effort uses more of your plan's limits." value=${a.taskEffort} onChange=${(v) => setP({ anthropic: { taskEffort: v } })} options=${['low', 'medium', 'high', 'xhigh', 'max']} width=${140} />
         <${ToggleItem} title="Web search" desc="Let Claude search the web and read pages (runs in Claude Code on your plan)." value=${cs.webSearch !== false} onChange=${(v) => setP({ claudeSub: { webSearch: v } })} />
