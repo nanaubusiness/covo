@@ -12,6 +12,7 @@ import { listDevices, disconnectDevice } from './devices.js';
 import { mcpStatus, reloadMcp } from './mcp.js';
 import { vapidPublicKey, addPushSub, removePushSub, notify } from './notify.js';
 import { emailConfigured } from './email.js';
+import { transcribe, transcribeAvailable } from './transcribe.js';
 import { renderSystemPrompt, PRESETS, promptTemplate } from './agent/prompt.js';
 import { CATEGORIES } from './agent/policy.js';
 import * as core from './agent/core.js';
@@ -117,6 +118,7 @@ export function bootstrap() {
     memory: db.data.memory,
     routines: db.data.routines,
     watchers: db.data.watchers || [],
+    transcribe: transcribeAvailable(),
     lastCheckin: db.data.meta?.lastCheckin || null,
     devices: listDevices(),
     mcp: mcpStatus(),
@@ -167,6 +169,15 @@ r.patch('/api/topics/:id', async (req, res, p) => {
   for (const k of ['title', 'emoji', 'status', 'archived']) if (b[k] !== undefined) t[k] = b[k];
   t.updatedAt = now(); save(); broadcast('topic.update', t);
   send(res, 200, t);
+});
+
+/* ───────────── voice → text (Whisper on this computer) ───────────── */
+r.post('/api/transcribe', async (req, res) => {
+  const buf = await readBody(req, 50 * 1024 * 1024);
+  if (!buf.length) throw err(400, 'No audio');
+  const t0 = Date.now();
+  const text = await transcribe(buf);
+  send(res, 200, { text, ms: Date.now() - t0 });
 });
 
 /* ───────────── watchers & check-ins ───────────── */

@@ -75,6 +75,8 @@ export function Composer({ autoFocus, onSend, placeholder }) {
   const fileIn = useRef();
   const rec = useRef();
   const stopped = useRef(false);
+  const recorder = useRef(null);
+  const [transcribing, setTranscribing] = useState(false);
   const busy = ['thinking', 'writing', 'working'].includes(agentState);
 
   useEffect(() => {
@@ -116,7 +118,36 @@ export function Composer({ autoFocus, onSend, placeholder }) {
     const files = [...(e.clipboardData?.files || [])];
     if (files.length) { e.preventDefault(); onFiles(files); }
   };
+  // Best quality: record the audio and let Whisper on your Mac write it down (server edition).
+  const useWhisper = () => get().transcribe && !api.isLocal() && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+  const recordForWhisper = async () => {
+    if (dictating) { recorder.current?.stop(); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+    catch (e) { toast({ title: t('Dictate'), body: 'Microphone access was blocked. Allow it for this app and try again.' }); return; }
+    const mr = new MediaRecorder(stream);
+    const chunks = [];
+    mr.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach((tr) => tr.stop());
+      setDictating(false);
+      const blob = new Blob(chunks, { type: mr.mimeType || 'audio/webm' });
+      if (blob.size < 2000) return; // nothing said
+      setTranscribing(true);
+      try {
+        const r = await fetch('/api/transcribe', { method: 'POST', body: blob, headers: { 'Content-Type': blob.type || 'application/octet-stream' }, credentials: 'same-origin' });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        if (j.text) setText((cur) => (cur.trim() ? cur.trimEnd() + ' ' : '') + j.text);
+      } catch (e) { toast({ title: 'Could not transcribe', body: e.message }); }
+      finally { setTranscribing(false); ta.current?.focus(); }
+    };
+    recorder.current = mr;
+    mr.start(1000);
+    setDictating(true);
+  };
   const dictate = () => {
+    if (useWhisper()) return recordForWhisper();
     if (!SR) { toast({ title: t('Dictate'), body: 'Speech recognition is not supported in this browser. Try Chrome, Edge or Safari.' }); return; }
     if (dictating) { stopped.current = true; rec.current?.stop(); return; }
     // Android's "continuous" mode is buggy (repeats itself), so there we listen in short sessions
@@ -147,8 +178,8 @@ export function Composer({ autoFocus, onSend, placeholder }) {
     <div class="composer" onDragOver=${(e) => e.preventDefault()} onDrop=${(e) => { e.preventDefault(); onFiles([...e.dataTransfer.files]); }}>
       ${!onSend && html`<button class="icon-btn" aria-label=${t('Attach')} title=${t('Attach')} onClick=${() => fileIn.current.click()}><${Icon} name=${uploading ? 'refresh' : 'plus'} /></button>`}
       <input type="file" multiple hidden ref=${fileIn} onChange=${(e) => { onFiles([...e.target.files]); e.target.value = ''; }} />
-      <textarea ref=${ta} rows="1" placeholder=${placeholder || t('Message')} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste} aria-label=${t('Message')} dir="auto"></textarea>
-      <button class=${cx('icon-btn', dictating && 'mic-on')} aria-label=${t('Dictate')} title=${t('Dictate')} onClick=${dictate}><${Icon} name="mic" /></button>
+      <textarea ref=${ta} rows="1" placeholder=${transcribing ? t('Transcribing…') : dictating && useWhisper() ? t('Listening… tap ■ when done') : placeholder || t('Message')} value=${text} onInput=${(e) => setText(e.target.value)} onKeyDown=${onKey} onPaste=${onPaste} aria-label=${t('Message')} dir="auto"></textarea>
+      <button class=${cx('icon-btn', dictating && 'mic-on')} aria-label=${t('Dictate')} title=${dictating ? t('Stop and transcribe') : t('Dictate')} disabled=${transcribing} onClick=${dictate}><${Icon} name=${transcribing ? 'refresh' : dictating ? 'stop' : 'mic'} /></button>
       ${hasContent
         ? html`<button class="send-btn" aria-label=${t('Send')} onClick=${submit}><${Icon} name="up" /></button>`
         : busy
