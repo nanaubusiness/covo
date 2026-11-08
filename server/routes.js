@@ -174,6 +174,14 @@ r.post('/api/checkin', (req, res) => {
   if (activeProvider() === 'demo') throw err(400, 'Connect a model in Settings → Model to run check-ins.');
   send(res, 200, core.runCheckin({ force: true }));
 });
+r.post('/api/watchers', async (req, res) => {
+  const b = await readJsonBody(req);
+  if (!b.title || !b.target) throw err(400, 'title and target are required');
+  const w = { id: id('w_'), enabled: true, createdAt: now(), updatedAt: now(), state: '', lastChecked: null };
+  for (const k of ['title', 'kind', 'target', 'how', 'notify_when']) if (b[k] !== undefined) w[k] = b[k];
+  (db.data.watchers ||= []).push(w); save(); broadcast('watchers', db.data.watchers);
+  send(res, 200, w);
+});
 r.patch('/api/watchers/:id', async (req, res, p) => {
   const b = await readJsonBody(req);
   const w = (db.data.watchers || []).find((x) => x.id === p.id);
