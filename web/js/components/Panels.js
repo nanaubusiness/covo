@@ -10,6 +10,8 @@ import { TaskRow, groupOf } from './Tasks.js';
 import { sendMessage } from './Composer.js';
 import { saveSettings } from './settings/common.js';
 import { needsCount } from '../needs.js';
+import { TopicList } from './Topics.js';
+export { TopicList };
 
 /* ───────────── shared: search ───────────── */
 function useSearch(q) {
@@ -35,15 +37,6 @@ function SearchResults({ r, done }) {
     ${r.artifacts.map((x) => html`<button class="topic-item" onClick=${go(() => setUI({ viewer: { id: x.id }, panel: 'artifact' }))}><${Icon} name=${KIND_ICON[x.kind] || 'file'} size="sm" /><span class="t">${x.title}</span></button>`)}
     ${r.messages.map((x) => html`<button class="topic-item" onClick=${go(() => setUI({ topicFilter: x.topicId || null, tab: 'chat' }))}><${Icon} name="chat" size="sm" /><span class="t">${x.text.replace(/\s+/g, ' ').slice(0, 80)}</span></button>`)}
   </div>`;
-}
-
-export function TopicList({ onPick, compact }) {
-  const topics = useStore((s) => s.topics.filter((x) => !x.archived));
-  const filter = useStore((s) => s.ui.topicFilter);
-  const sorted = [...topics].sort((a, b) => (a.status === 'needs_you' ? -1 : 0) - (b.status === 'needs_you' ? -1 : 0) || b.updatedAt - a.updatedAt).slice(0, compact ? 12 : 40);
-  if (!sorted.length) return html`<div class="hint" style="padding:4px 10px">Topics appear as your agent works.</div>`;
-  return sorted.map((x) => html`<button class=${cx('topic-item', filter === x.id && 'on')} onClick=${() => { setUI({ topicFilter: filter === x.id ? null : x.id, tab: 'chat' }); onPick?.(); }}>
-    <${StatusIcon} status=${x.status} emoji=${x.emoji} /><span class="t">${x.title}</span></button>`);
 }
 
 /* ───────────── Mobile drawer (hamburger) ───────────── */

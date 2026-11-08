@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, id, now, log, truncate } from '../util.js';
-import { db, save, addFeed, updateFeed, addApproval, updateApproval, setTopicStatus, upsertTopic } from '../db.js';
+import { db, save, addFeed, updateFeed, addApproval, updateApproval, setTopicStatus, upsertTopic, setMainWorking } from '../db.js';
 import { bus, broadcast } from '../bus.js';
 import { getSettings, activeProvider } from '../config.js';
 import { notify } from '../notify.js';
@@ -132,7 +132,8 @@ async function pump() {
           ctx,
           effort: routine ? s.provider.anthropic.taskEffort : s.provider.anthropic.effort,
           signal: ac.signal,
-          onStateChange: setState,
+          // "Working" follows the topic the agent is on (set_topic can switch it mid-turn).
+          onStateChange: (st) => { setState(st); setMainWorking(ctx.topicId); },
         });
         if (routine) afterRoutine(routine, r);
       } catch (e) {
@@ -140,10 +141,12 @@ async function pump() {
         addFeed({ kind: 'error', text: friendlyError(e), topicId: ctx.topicId });
       } finally {
         main.abort = null;
+        setMainWorking(null);
       }
     }
   } finally {
     main.busy = false;
+    setMainWorking(null);
     setState('idle');
   }
 }

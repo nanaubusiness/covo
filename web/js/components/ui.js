@@ -37,7 +37,9 @@ export function Seg({ value, options, onChange }) {
 }
 
 // Status glyph used for topic tags, chips and task rows.
-export function StatusIcon({ status, emoji }) {
+// Only spins while the agent is actually working on it (like T3 Code's "Working").
+export function StatusIcon({ status, emoji, working }) {
+  if (working) return html`<span class="st in_progress working"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1-8.5 6"/></svg></span>`;
   if (status === 'done') return html`<span class="st done"><svg viewBox="0 0 24 24" class="icon"><path d="M20 6 9 17l-5-5"/></svg></span>`;
   if (status === 'needs_you') return html`<span class="st needs_you">${emoji ? html`<span class="emoji">${emoji}</span>` : html`<span class="dot"></span>`}</span>`;
   return html`<span class=${cx('st', status === 'in_progress' ? 'in_progress' : 'active')}><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1-8.5 6"/></svg></span>`;

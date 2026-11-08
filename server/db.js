@@ -11,7 +11,7 @@ const EMPTY = () => ({
   version: 1,
   feed: [],          // UI items shown in the single conversation thread
   transcript: [],    // raw API messages for the main conversation (append-only)
-  topics: [],        // { id, title, emoji, color, status, updatedAt }
+  topics: [],        // { id, title, emoji, color, status, updatedAt, working, settledAt, settlePending, snoozedUntil, unread }
   tasks: [],         // background jobs
   artifacts: [],     // Make tab items (content stored on disk)
   approvals: [],     // pending / decided approvals
@@ -23,6 +23,11 @@ const EMPTY = () => ({
 });
 
 export const db = { data: Object.assign(EMPTY(), readJson(FILE, {})) };
+// Nothing is running yet at startup: drop stale "working" flags and finish pending settles.
+for (const t of db.data.topics || []) {
+  if (t.working) t.working = false;
+  if (t.settlePending) { t.settledAt = Date.now(); t.settlePending = false; }
+}
 
 let timer = null;
 export function save() {
@@ -50,6 +55,7 @@ export function addFeed(item) {
   const it = { id: id('f_'), ts: now(), ...item };
   db.data.feed.push(it);
   if (db.data.feed.length > 5000) db.data.feed.splice(0, db.data.feed.length - 5000);
+  if (it.topicId) topicActivity(it.topicId, { fromUser: it.kind === 'user' });
   save();
   broadcast('feed.add', it);
   return it;
@@ -90,8 +96,96 @@ export function setTopicStatus(tid, status) {
   const t = db.data.topics.find((x) => x.id === tid);
   if (!t) return;
   t.status = status; t.updatedAt = now();
+  if (status === 'needs_you') resurface(t, true);
   save();
   broadcast('topic.update', t);
+}
+
+/* ---------------- topic lifecycle (working / settled / snoozed / unread) ----------------
+ * Works like T3 Code threads:
+ *  - working:  the agent is running on this topic right now (main turn or a background task).
+ *  - settle:   "done for now". Settling while the topic is working applies when the work ends.
+ *              Any new activity in the topic brings it back.
+ *  - snooze:   hidden until snoozedUntil, then it comes back marked unread. New agent activity
+ *              or a "needs you" wakes it early.
+ *  - unread:   set when a settled/snoozed topic resurfaces; cleared when you open the topic.
+ */
+const lifecycle = { mainTopicId: null };
+
+function resurface(t, fromAgent) {
+  let changed = false;
+  if (t.settledAt) { t.settledAt = null; if (fromAgent) t.unread = true; changed = true; }
+  if (t.snoozedUntil) { t.snoozedUntil = null; if (fromAgent) t.unread = true; changed = true; }
+  return changed;
+}
+
+function topicActivity(tid, { fromUser }) {
+  const t = db.data.topics.find((x) => x.id === tid);
+  if (!t) return;
+  // A message you write yourself cancels a pending settle; agent work during a turn doesn't.
+  if (fromUser) t.settlePending = false;
+  if (resurface(t, !fromUser)) broadcast('topic.update', t);
+}
+
+export function organizeTopic(tid, action, { until } = {}) {
+  const t = db.data.topics.find((x) => x.id === tid);
+  if (!t) return null;
+  switch (action) {
+    case 'settle':
+      t.snoozedUntil = null; t.unread = false;
+      if (t.working) t.settlePending = true; else { t.settledAt = now(); t.settlePending = false; }
+      break;
+    case 'unsettle': t.settledAt = null; t.settlePending = false; break;
+    case 'snooze': {
+      const ts = typeof until === 'number' ? until : Date.parse(until);
+      if (!Number.isFinite(ts) || ts <= now()) throw Object.assign(new Error('Snooze needs a time in the future'), { status: 400 });
+      t.snoozedUntil = ts; t.settledAt = null; t.settlePending = false; t.unread = false;
+      break;
+    }
+    case 'unsnooze': t.snoozedUntil = null; break;
+    case 'mark_unread': t.unread = true; break;
+    case 'mark_read': t.unread = false; break;
+    default: throw Object.assign(new Error(`Unknown action ${action}`), { status: 400 });
+  }
+  save();
+  broadcast('topic.update', t);
+  return t;
+}
+
+// Recompute which topics the agent is working on: the main turn's current topic + running tasks.
+export function refreshWorking() {
+  const ids = new Set();
+  if (lifecycle.mainTopicId) ids.add(lifecycle.mainTopicId);
+  for (const k of db.data.tasks) if (k.status === 'running' && k.topicId) ids.add(k.topicId);
+  let changed = false;
+  for (const t of db.data.topics) {
+    const w = ids.has(t.id);
+    if (!!t.working === w) continue;
+    t.working = w;
+    if (!w && t.settlePending) { t.settledAt = now(); t.settlePending = false; }
+    changed = true;
+    broadcast('topic.update', t);
+  }
+  if (changed) save();
+}
+export function setMainWorking(topicId) {
+  if (lifecycle.mainTopicId === (topicId || null)) return;
+  lifecycle.mainTopicId = topicId || null;
+  refreshWorking();
+}
+
+// Called by the scheduler: bring back topics whose snooze ran out.
+export function wakeSnoozedTopics() {
+  const woke = [];
+  for (const t of db.data.topics) {
+    if (t.snoozedUntil && t.snoozedUntil <= now()) {
+      t.snoozedUntil = null; t.unread = true;
+      broadcast('topic.update', t);
+      woke.push(t);
+    }
+  }
+  if (woke.length) save();
+  return woke;
 }
 
 /* ---------------- artifacts ---------------- */
@@ -142,6 +236,7 @@ export function upsertTask(t) {
   task.updatedAt = now();
   save();
   broadcast('task.upsert', publicTask(task));
+  if (t.status) refreshWorking();
   return task;
 }
 export function publicTask(t) {
