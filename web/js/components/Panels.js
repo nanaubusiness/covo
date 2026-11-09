@@ -13,6 +13,21 @@ import { needsCount } from '../needs.js';
 import { transcriptOf } from '../lib/speech.js';
 import { TopicList } from './Topics.js';
 import { ChatList } from './Chat.js';
+
+// Weekly plan usage at a glance (Claude subscription), refreshed every 5 minutes.
+function UsageItem({ onPick }) {
+  const provider = useStore((s) => s.provider);
+  const [u, setU] = useState(null);
+  useEffect(() => {
+    if (provider !== 'claude-sub' || api.isLocal()) return;
+    const load = () => api.get('/api/plan-usage').then(setU).catch(() => {});
+    load(); const i = setInterval(load, 300_000); return () => clearInterval(i);
+  }, [provider]);
+  if (provider !== 'claude-sub' || api.isLocal()) return null;
+  const week = u?.windows?.find((w) => w.key === 'seven_day');
+  const p = week ? Math.round(week.percent) : null;
+  return html`<button class="topic-item" onClick=${() => { setUI({ drawer: false, settings: 'usage' }); onPick?.(); }}><${Icon} name="chart" size="sm" /><span class="t">${t('Usage')}</span>${p !== null && html`<span class=${`pill usage-pill ${p >= 90 ? 'bad' : p >= 70 ? 'warn' : ''}`}>${p}% week</span>`}</button>`;
+}
 export { TopicList };
 
 /* ───────────── shared: search ───────────── */
@@ -72,6 +87,7 @@ export function Drawer() {
       </div>`}
     </div>
     <div style="border-top:1px solid var(--line);padding:8px" class="stack">
+      <${UsageItem} />
       <button class="topic-item" onClick=${() => setUI({ drawer: false, settings: 'devices' })}><${Icon} name="cpu" size="sm" /><span class="t">${t('Devices')}</span><span class="pill"><span class=${cx('d', online && 'on')}></span>${online} online</span></button>
       <button class="topic-item" onClick=${() => setUI({ drawer: false, settings: 'general' })}><${Icon} name="settings" size="sm" /><span class="t">${t('Settings')}</span></button>
     </div>
@@ -104,6 +120,7 @@ export function Sidebar() {
       </div>`}
     </div>
     <div class="foot">
+      <${UsageItem} />
       <button class="topic-item" onClick=${() => setUI({ settings: 'devices' })}><${Icon} name="cpu" size="sm" /><span class="t">${t('Devices')}</span><span class="pill"><span class=${cx('d', online && 'on')}></span>${online}</span></button>
       <button class="topic-item" onClick=${() => setUI({ settings: 'general' })}><${Icon} name="settings" size="sm" /><span class="t">${t('Settings')}</span><span class="kbd">,</span></button>
       <button class="me-row" onClick=${() => setUI({ profile: true })}><span class="av"><${Avatar} name=${p.name} color=${p.avatarColor} size=${30} /></span><span class="grow"><b style="font-size:var(--fs-md);font-weight:500">${p.name || 'You'}</b><small>${s.provider === 'demo' ? t('Demo mode') : s.settings?.provider?.[s.provider === 'claude-sub' ? 'claudeSub' : s.provider]?.model || s.provider}</small></span></button>

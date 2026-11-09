@@ -326,6 +326,45 @@ export function RoutinesSection() {
   <//>`;
 }
 
+/* ═════════════ Usage (your Claude plan's limits) ═════════════ */
+export function untilText(iso) {
+  if (!iso) return '';
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return 'resetting now';
+  const h = Math.floor(ms / 3600e3), m = Math.round((ms % 3600e3) / 60e3);
+  const when = new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  return `resets in ${h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h ? `${h}h ${m}m` : `${m}m`} (${when})`;
+}
+const level = (p) => (p >= 90 ? 'bad' : p >= 70 ? 'warn' : 'ok');
+export function UsageSection() {
+  const [u, setU] = useState(null);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const own = useStore((s) => s.usage);
+  const load = async (fresh) => { setBusy(true); try { setU(await api.get(`/api/plan-usage${fresh ? '?fresh=1' : ''}`)); setErr(''); } catch (e) { setErr(e.message); } setBusy(false); };
+  useEffect(() => { load(); const i = setInterval(() => load(), 60_000); return () => clearInterval(i); }, []);
+  const n = (v) => (v || 0).toLocaleString();
+  return html`<${Page} title=${t('Usage')} desc="Your Claude subscription's limits, the same numbers Claude Code's /usage shows. Updates every minute while this page is open.">
+    ${err && html`<div class="err">${err}</div>`}
+    ${!u && !err && html`<div class="hint">Loading…</div>`}
+    ${u && html`<${Group} title=${`Claude ${u.subscription ? u.subscription[0].toUpperCase() + u.subscription.slice(1) : ''} plan`}>
+      ${!u.available && html`<div class="item"><div class="txt"><b>No plan limits to show</b><small>Claude Code here isn't signed in with a Claude subscription.</small></div></div>`}
+      ${u.windows.map((w) => html`<div class="item col usage-row">
+        <div class="row" style="justify-content:space-between"><div class="txt"><b>${w.label}</b><small>${w.hint} · ${untilText(w.resetsAt)}</small></div><b class=${`usage-pct ${level(w.percent)}`}>${Math.round(w.percent)}%</b></div>
+        <div class=${`usage-bar ${level(w.percent)}`}><i style=${`width:${Math.min(100, w.percent)}%`}></i></div>
+      </div>`)}
+      ${u.extraUsage?.enabled && html`<div class="item"><div class="txt"><b>Extra usage</b><small>${u.extraUsage.used ?? 0} of ${u.extraUsage.limit ?? '—'} ${u.extraUsage.currency || ''} this month</small></div></div>`}
+      <div class="item"><div class="txt"><small>${u.stale ? 'Showing the last numbers (couldn\'t refresh). ' : ''}Checked ${fmtTime(u.fetchedAt)}</small></div><button class="btn outline sm" disabled=${busy} onClick=${() => load(true)}><${Icon} name="refresh" size="sm" />${busy ? 'Checking…' : 'Refresh'}</button></div>
+    <//>`}
+    ${u?.breakdown?.length > 0 && html`<${Group} title="Where this week's usage went">
+      ${u.breakdown.map((r) => html`<div class="item"><div class="txt"><b style="font-weight:400">${r.label}</b></div><span class="muted">${r.percent}%</span></div>`)}
+    <//>`}
+    <${Group} title="What Duet itself used (all time)">
+      <div class="item"><div class="txt"><b style="font-weight:400">${n(own?.requests)} requests</b><small>${n(own?.inputTokens)} input · ${n(own?.outputTokens)} output · ${n(own?.cacheReadTokens)} reused from cache · ${n(own?.cacheWriteTokens)} written to cache</small></div></div>
+    <//>
+  <//>`;
+}
+
 /* ═════════════ Check-ins & watchers (Duet-style) ═════════════ */
 const HOURS = [['30', 'Every 30 minutes'], ['60', 'Every hour'], ['120', 'Every 2 hours'], ['180', 'Every 3 hours'], ['240', 'Every 4 hours'], ['360', 'Every 6 hours']];
 export function CheckinsSection() {

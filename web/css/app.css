@@ -447,3 +447,12 @@ a { color: var(--accent); }
 .chat-note b { color: var(--ink-2); }
 .chat-empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 8px; padding: 24px; }
 .chat-empty h2 { font-family: var(--font-serif, serif); font-weight: 500; margin: 0; }
+
+/* Usage page */
+.usage-row { gap: 8px; }
+.usage-pct { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.usage-pct.warn { color: var(--warn); } .usage-pct.bad { color: var(--danger, #c0392b); }
+.usage-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.usage-bar i { display: block; height: 100%; border-radius: 999px; background: var(--info); transition: width .4s; }
+.usage-bar.warn i { background: var(--amber-500, #e0a100); } .usage-bar.bad i { background: var(--danger, #c0392b); }
+.usage-pill.warn { background: var(--warn-soft); color: var(--warn); } .usage-pill.bad { background: rgba(192,57,43,.12); color: var(--danger, #c0392b); }
