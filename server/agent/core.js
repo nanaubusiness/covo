@@ -63,11 +63,12 @@ function attachmentBlocks(atts = []) {
   return out;
 }
 
-export function userMessage({ text = '', attachments = [], topicId = null, source = 'app' }) {
+export const VOICE_NOTE = '(Said out loud in voice mode: your reply will be read aloud. Answer in 1-3 short, natural spoken sentences. No lists, tables, links or markdown. Do the work with tools as usual.)';
+export function userMessage({ text = '', attachments = [], topicId = null, source = 'app', voice = false }) {
   text = String(text).trim();
   if (!text && !attachments.length) return null;
-  const item = addFeed({ kind: 'user', text, attachments, topicId, via: source !== 'app' ? source : undefined });
-  enqueue({ type: 'user', text, attachments, feedId: item.id });
+  const item = addFeed({ kind: 'user', text, attachments, topicId, via: voice ? 'voice' : source !== 'app' ? source : undefined });
+  enqueue({ type: 'user', text: voice ? `${text}\n\n${VOICE_NOTE}` : text, attachments, feedId: item.id });
   return item;
 }
 

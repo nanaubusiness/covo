@@ -187,60 +187,183 @@ export function ProfileSheet() {
   <//>`;
 }
 
-/* ───────────── Voice mode ───────────── */
+/* ───────────── Voice mode ─────────────
+ * A spoken conversation: listen until you stop talking (voice-activity detection), transcribe
+ * with Whisper on the Mac, send to the chat you're in, wait for the reply, read it aloud with a Mac
+ * voice, then listen again. Tap the orb to interrupt. Falls back to the browser's speech
+ * recognition / voices when the Mac services aren't available. */
 const SR = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
 const plain = (md) => md.replace(/\[\[([^\]]+)\]\]/g, '$1').replace(/[*_`#>]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+const SILENCE_MS = 1300;   // this much quiet after speech ends your turn
+const MAX_TURN_MS = 90_000;
 
 export function VoiceMode() {
-  const [phase, setPhase] = useState(SR ? 'listening' : 'unsupported');
+  const [phase, setPhase] = useState('starting'); // starting | listening | transcribing | thinking | speaking | denied | error
   const [cap, setCap] = useState('');
-  const recRef = useRef(null);
-  const lastId = useRef(null);
-  const sentAt = useRef(0);
-  const feed = useStore((s) => s.feed);
-  const agentState = useStore((s) => s.agentState);
+  const [level, setLevel] = useState(0);
+  const chatId = useStore((s) => s.ui.chat && s.ui.chat !== 'new' ? s.ui.chat : null);
+  const st = useRef({ alive: true, stream: null, ctx: null, rec: null, audio: null, raf: 0, sr: null, wait: 0 });
   const lang = getLang();
-  const close = () => { recRef.current?.abort?.(); speechSynthesis?.cancel(); setUI({ voice: false }); };
+  const server = !api.isLocal();
+  const canWhisper = () => server && get().transcribe && typeof MediaRecorder !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 
-  const listen = () => {
-    if (!SR) return;
-    const r = new SR();
+  const cleanup = () => {
+    const x = st.current; x.alive = false;
+    cancelAnimationFrame(x.raf); clearInterval(x.wait);
+    try { x.rec?.state === 'recording' && x.rec.stop(); } catch {}
+    try { x.sr?.abort(); } catch {}
+    x.stream?.getTracks().forEach((t) => t.stop());
+    x.ctx?.close?.().catch?.(() => {});
+    if (x.audio) { x.audio.pause(); x.audio.src = ''; }
+    window.speechSynthesis?.cancel();
+  };
+  const close = () => { cleanup(); setUI({ voice: false }); };
+
+  // ── speaking ──
+  const say = async (text) => {
+    const x = st.current; if (!x.alive) return;
+    setPhase('speaking'); setCap(plain(text));
+    const done = () => { if (st.current.alive) listen(); };
+    if (server && get().speak) {
+      try {
+        const r = await fetch('/api/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }), credentials: 'same-origin' });
+        if (!r.ok) throw new Error('speak failed');
+        const url = URL.createObjectURL(await r.blob());
+        x.audio.src = url; x.audio.onended = () => { URL.revokeObjectURL(url); done(); };
+        await x.audio.play(); return;
+      } catch {}
+    }
+    if (window.speechSynthesis) {
+      const u = new SpeechSynthesisUtterance(plain(text));
+      u.lang = /[؀-ۿ]/.test(text) ? 'ar' : navigator.language || 'en-US';
+      u.onend = done; u.onerror = done; speechSynthesis.speak(u); return;
+    }
+    done();
+  };
+  const interrupt = () => {
+    const x = st.current;
+    if (phase === 'speaking') { x.audio?.pause(); window.speechSynthesis?.cancel(); listen(); }
+    else if (phase === 'listening' && x.rec?.state === 'recording') x.rec.stop(); // "I'm done talking"
+  };
+
+  // ── waiting for the reply (by message id, not clock, so phone/Mac clock drift can't break it) ──
+  const awaitReply = (seen, chat, stepsBefore) => {
+    const x = st.current; clearInterval(x.wait);
+    const t0 = Date.now();
+    x.wait = setInterval(async () => {
+      if (!x.alive) return clearInterval(x.wait);
+      let text = '';
+      if (chat) {
+        const task = get().tasks.find((t) => t.id === chat);
+        if (!task || ['running', 'queued'].includes(task.status)) return;
+        const d = await api.get(`/api/tasks/${chat}`).catch(() => null);
+        text = (d?.steps || []).slice(stepsBefore).filter((s) => s.kind === 'assistant').map((s) => s.text).join('\n\n');
+      } else {
+        const s = get();
+        if (['thinking', 'writing', 'working'].includes(s.agentState)) return;
+        const fresh = s.feed.filter((f) => !seen.has(f.id) && f.kind === 'assistant' && !f.streaming && !f.progress);
+        if (!fresh.length && Date.now() - t0 < 4000) return; // give the turn a moment to start
+        text = fresh.map((f) => f.text).join('\n\n');
+      }
+      clearInterval(x.wait);
+      if (text.trim()) say(text); else listen();
+    }, 400);
+  };
+
+  const send = async (text) => {
+    const x = st.current; if (!x.alive) return;
+    setCap(text); setPhase('thinking');
+    try {
+      if (chatId) {
+        const before = (await api.get(`/api/tasks/${chatId}`).catch(() => ({ steps: [] }))).steps?.length || 0;
+        await api.post(`/api/tasks/${chatId}/action`, { message: text, voice: true });
+        awaitReply(null, chatId, before);
+      } else {
+        const seen = new Set(get().feed.map((f) => f.id));
+        await api.post('/api/messages', { text, voice: true });
+        awaitReply(seen, null, 0);
+      }
+    } catch (e) { setPhase('error'); setCap(e.message); }
+  };
+
+  // ── listening ──
+  const listenWhisper = async () => {
+    const x = st.current;
+    if (!x.stream) {
+      try { x.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+      catch { setPhase('denied'); return; }
+      x.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = x.ctx.createMediaStreamSource(x.stream);
+      x.an = x.ctx.createAnalyser(); x.an.fftSize = 1024; src.connect(x.an);
+    }
+    if (!x.alive) return;
+    await x.ctx.resume?.();
+    const rec = new MediaRecorder(x.stream); const chunks = []; x.rec = rec;
+    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      cancelAnimationFrame(x.raf); setLevel(0);
+      if (!x.alive) return;
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      if (!heard || blob.size < 2000) return listen();
+      setPhase('transcribing');
+      try {
+        const r = await fetch('/api/transcribe', { method: 'POST', body: blob, headers: { 'Content-Type': blob.type }, credentials: 'same-origin' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'transcribe failed');
+        if (j.text?.trim()) send(j.text.trim()); else listen();
+      } catch (e) { setPhase('error'); setCap(e.message); }
+    };
+    // Voice-activity detection: adapt to the room's noise, end the turn after a pause.
+    const buf = new Float32Array(x.an.fftSize);
+    let floor = 0.01, heard = false, lastVoice = 0; const t0 = performance.now();
+    const tick = () => {
+      if (!x.alive || rec.state !== 'recording') return;
+      x.an.getFloatTimeDomainData(buf);
+      let sum = 0; for (const v of buf) sum += v * v;
+      const rms = Math.sqrt(sum / buf.length);
+      const now = performance.now();
+      if (!heard) floor = floor * 0.95 + rms * 0.05;
+      const voiced = rms > Math.max(0.015, floor * 2.5);
+      if (voiced) { heard = true; lastVoice = now; }
+      setLevel(Math.min(1, rms * 12));
+      if ((heard && now - lastVoice > SILENCE_MS) || now - t0 > MAX_TURN_MS) { rec.stop(); return; }
+      x.raf = requestAnimationFrame(tick);
+    };
+    rec.start(250); setPhase('listening'); setCap('');
+    x.raf = requestAnimationFrame(tick);
+  };
+  const listenBrowser = () => {
+    if (!SR) { setPhase('error'); setCap('Voice needs the Duet app on your Mac or a browser with speech recognition.'); return; }
+    const x = st.current; const r = new SR(); x.sr = r;
     r.lang = lang === 'ar' ? 'ar-IQ' : navigator.language || 'en-US';
     r.interimResults = true; r.continuous = false;
     let finalText = '';
-    r.onresult = (ev) => { const s = transcriptOf(ev.results); if ([...ev.results].some((x) => x.isFinal)) finalText = s; setCap(s); };
-    r.onend = () => {
-      if (finalText.trim()) { setPhase('thinking'); sentAt.current = Date.now(); sendMessage(finalText.trim()); }
-      else if (phase !== 'ended') setTimeout(() => recRef.current === r && listen(), 300);
-    };
-    r.onerror = (e) => { if (e.error === 'not-allowed') { setPhase('denied'); } };
-    recRef.current = r;
+    r.onresult = (ev) => { const s = transcriptOf(ev.results); if ([...ev.results].some((y) => y.isFinal)) finalText = s; setCap(s); };
+    r.onend = () => { if (!x.alive) return; if (finalText.trim()) send(finalText.trim()); else setTimeout(() => x.alive && listen(), 300); };
+    r.onerror = (e) => { if (e.error === 'not-allowed') setPhase('denied'); };
     setPhase('listening'); setCap('');
     try { r.start(); } catch {}
   };
-  useEffect(() => { if (SR) listen(); return () => { recRef.current?.abort?.(); speechSynthesis?.cancel(); }; }, []);
-  // When the agent finishes replying, read the new assistant text aloud, then listen again.
-  useEffect(() => {
-    if (phase !== 'thinking' || ['thinking', 'writing', 'working'].includes(agentState)) return;
-    const replies = feed.filter((f) => f.kind === 'assistant' && f.ts >= sentAt.current - 1000 && !f.streaming);
-    if (!replies.length) return;
-    const text = plain(replies.map((r) => r.text).join('\n\n'));
-    if (lastId.current === replies[replies.length - 1].id) return;
-    lastId.current = replies[replies.length - 1].id;
-    setCap(text);
-    setPhase('speaking');
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang === 'ar' ? 'ar' : navigator.language || 'en-US';
-    u.onend = () => listen();
-    speechSynthesis.speak(u);
-  }, [agentState, feed, phase]);
+  const listen = () => (canWhisper() ? listenWhisper() : listenBrowser());
 
-  const orbState = phase === 'listening' ? 'listening' : phase === 'thinking' ? 'thinking' : phase === 'speaking' ? 'writing' : 'idle';
+  useEffect(() => {
+    // Opened by a tap: unlock audio playback for the whole session (phones block autoplay otherwise).
+    const a = new Audio(); a.playsInline = true; st.current.audio = a;
+    a.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTRUoAWgBgkOAGbZHBgG1OF6zM82DWbZaUmMBptgQhGjsyYqc9ae9XFz280948NMBWInljyzsNRFLPWdnZGWrddDsjK1unuSrVN9jJsK8KuQtQCtMBjCEtImISdNKJOopIpBFpNSMbIHCSRpRR5iakjTiyzLhchUUBwCgyKiweBv/7UsQbg8isVNoMPMjAAAA0gAAABEVFGmgqK////9bP/6XCykxBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+    a.play().catch(() => {});
+    listen();
+    return cleanup;
+  }, []);
+
+  const orbState = phase === 'listening' ? 'listening' : phase === 'thinking' || phase === 'transcribing' ? 'thinking' : phase === 'speaking' ? 'writing' : 'idle';
+  const label = { starting: t('Starting…'), listening: t('Listening…'), transcribing: t('Got it…'), thinking: t('Thinking…'), speaking: t('Speaking…'), denied: 'Microphone access was denied. Allow it for this app and reopen voice mode.', error: t('Something went wrong') }[phase];
   return html`<div class="voice" role="dialog" aria-label=${t('Voice mode')}>
-    <${Orb} state=${orbState} onClick=${() => phase === 'speaking' ? (speechSynthesis.cancel(), listen()) : null} />
-    <div class="cap">${phase === 'unsupported' ? 'Voice mode needs speech recognition (Chrome, Edge or Safari).' : phase === 'denied' ? 'Microphone access was denied.' : cap || (phase === 'listening' ? t('Listening…') : phase === 'thinking' ? t('Thinking…') : t('Speaking…'))}</div>
+    <div style=${`transform:scale(${1 + level * 0.25});transition:transform .08s`}><${Orb} state=${orbState} onClick=${interrupt} /></div>
+    <div class="cap">${cap || label}</div>
+    ${cap && html`<div class="hint" style="margin-top:6px">${label}</div>`}
+    <div class="hint" style="margin-top:4px">${phase === 'speaking' ? t('Tap the orb to interrupt') : phase === 'listening' ? t('Pause when you’re done, or tap the orb') : ''}${chatId ? ` · ${t('in this chat')}` : ''}</div>
     <div class="ctrls">
-      <button aria-label=${t('Dictate')} onClick=${() => { speechSynthesis.cancel(); listen(); }}><${Icon} name="mic" /></button>
+      <button aria-label=${t('Listen again')} onClick=${() => { st.current.audio?.pause(); window.speechSynthesis?.cancel(); clearInterval(st.current.wait); listen(); }}><${Icon} name="mic" /></button>
       <button class="end" aria-label=${t('Close')} onClick=${close}><${Icon} name="x" /></button>
     </div>
   </div>`;

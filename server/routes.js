@@ -14,6 +14,7 @@ import { vapidPublicKey, addPushSub, removePushSub, notify } from './notify.js';
 import { emailConfigured } from './email.js';
 import { transcribe, transcribeAvailable } from './transcribe.js';
 import { getPlanUsage } from './planUsage.js';
+import { speak, speakAvailable } from './speak.js';
 import { renderSystemPrompt, PRESETS, promptTemplate } from './agent/prompt.js';
 import { CATEGORIES } from './agent/policy.js';
 import * as core from './agent/core.js';
@@ -120,6 +121,7 @@ export function bootstrap() {
     routines: db.data.routines,
     watchers: db.data.watchers || [],
     transcribe: transcribeAvailable(),
+    speak: speakAvailable(),
     lastCheckin: db.data.meta?.lastCheckin || null,
     devices: listDevices(),
     mcp: mcpStatus(),
@@ -138,7 +140,7 @@ r.get('/api/bootstrap', (req, res) => send(res, 200, bootstrap()));
 /* ───────────── chat ───────────── */
 r.post('/api/messages', async (req, res) => {
   const b = await readJsonBody(req);
-  const item = core.userMessage({ text: b.text, attachments: b.attachments || [] });
+  const item = core.userMessage({ text: b.text, attachments: b.attachments || [], voice: !!b.voice });
   send(res, 200, { ok: true, item });
 });
 r.post('/api/stop', (req, res) => { core.stop(); send(res, 200, { ok: true }); });
@@ -176,6 +178,13 @@ r.patch('/api/topics/:id', async (req, res, p) => {
 r.get('/api/plan-usage', async (req, res) => {
   const fresh = new URL(req.url, 'http://x').searchParams.get('fresh') === '1';
   send(res, 200, await getPlanUsage({ fresh }));
+});
+
+r.post('/api/speak', async (req, res) => {
+  const b = await readJsonBody(req);
+  const audio = await speak(b.text);
+  res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Content-Length': audio.length, 'Cache-Control': 'no-store' });
+  res.end(audio);
 });
 
 /* ───────────── voice → text (Whisper on this computer) ───────────── */
@@ -250,7 +259,7 @@ r.post('/api/tasks/:id/action', async (req, res, p) => {
     upsertTask({ id: t.id });
     return send(res, 200, { ok: true, demo: true });
   }
-  send(res, 200, core.tasks.messageTask({ id: p.id, message: b.message, action: b.action }));
+  send(res, 200, core.tasks.messageTask({ id: p.id, message: b.voice ? `${b.message}\n\n${core.VOICE_NOTE}` : b.message, action: b.action }));
 });
 r.delete('/api/tasks/:id', (req, res, p) => { core.tasks.deleteTask(p.id); save(); send(res, 200, { ok: true }); });
 
