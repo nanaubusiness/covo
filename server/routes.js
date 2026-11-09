@@ -13,6 +13,7 @@ import { mcpStatus, reloadMcp } from './mcp.js';
 import { vapidPublicKey, addPushSub, removePushSub, notify } from './notify.js';
 import { emailConfigured } from './email.js';
 import { transcribe, transcribeAvailable } from './transcribe.js';
+import { getPlanUsage } from './planUsage.js';
 import { renderSystemPrompt, PRESETS, promptTemplate } from './agent/prompt.js';
 import { CATEGORIES } from './agent/policy.js';
 import * as core from './agent/core.js';
@@ -169,6 +170,12 @@ r.patch('/api/topics/:id', async (req, res, p) => {
   for (const k of ['title', 'emoji', 'status', 'archived']) if (b[k] !== undefined) t[k] = b[k];
   t.updatedAt = now(); save(); broadcast('topic.update', t);
   send(res, 200, t);
+});
+
+/* ───────────── Claude plan usage (5-hour / weekly limits) ───────────── */
+r.get('/api/plan-usage', async (req, res) => {
+  const fresh = new URL(req.url, 'http://x').searchParams.get('fresh') === '1';
+  send(res, 200, await getPlanUsage({ fresh }));
 });
 
 /* ───────────── voice → text (Whisper on this computer) ───────────── */
