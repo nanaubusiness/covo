@@ -35,6 +35,7 @@ export const hooks = {
   createApproval,
   createTask: tasks.createTask,
   runSubagent: tasks.runSubagent,
+  followUpSubagent: tasks.followUpSubagent,
   messageTask: tasks.messageTask,
   updateTask: tasks.updateTask,
   reportToUser: tasks.reportToUser,

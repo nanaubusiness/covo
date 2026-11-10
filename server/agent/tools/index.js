@@ -141,7 +141,19 @@ function coreTools(ctx) {
       run: async (i) => {
         const { task, done } = ctx.hooks.runSubagent({ title: i.title, prompt: i.prompt, model: resolveModel(i.model), effort: i.effort, parentId: ctx.task?.id || ctx.scope, depth: depth + 1 });
         const r = await done;
-        return r.ok ? { subagent_id: task.id, model: task.model || 'default', effort: task.effort || 'default', answer: r.result || '(it finished without an answer)' } : { error: `Sub-agent ${task.id} stopped: ${r.error}` };
+        return r.ok ? { subagent_id: task.id, model: task.model || 'default', effort: task.effort || 'default', answer: r.result || '(it finished without an answer)', follow_up: 'Use follow_up_subagent with this subagent_id to send it more instructions; it keeps its full context.' } : { error: `Sub-agent ${task.id} stopped: ${r.error}` };
+      },
+    });
+    if (depth < 3) tools.push({
+      name: 'follow_up_subagent',
+      description: 'Send a follow-up to a sub-agent you already started (by its subagent_id): a correction, a next step, a question about its answer, or "keep going". It continues with its whole conversation and context instead of starting over, and its new answer comes back as this tool\'s result. Call several in one reply to follow up with several sub-agents in parallel.',
+      input_schema: obj({ subagent_id: str('The subagent_id returned by run_subagent'), message: str('What to tell it: the follow-up, correction or next step') }, ['subagent_id', 'message']),
+      category: 'auto',
+      run: async (i) => {
+        const f = ctx.hooks.followUpSubagent({ id: i.subagent_id, message: i.message });
+        if (f.error) return f;
+        const r = await f.done;
+        return r.ok ? { subagent_id: f.task.id, answer: r.result || '(it finished without an answer)' } : { error: `Sub-agent ${f.task.id} stopped: ${r.error}` };
       },
     });
     if (ctx.scope === 'main') {
