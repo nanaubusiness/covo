@@ -92,6 +92,7 @@ export function AppearanceSection() {
 /* ═════════════ Model & provider ═════════════ */
 const CLAUDE_MODELS = [
   { id: 'claude-opus-5-5', name: 'Claude Opus 5.5 (recommended)' },
+  { id: 'claude-fable-5-2', name: 'Claude Fable 5.2 (newest, most capable)' },
   { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5 (faster, cheaper)' },
   { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5 (fastest)' },
   { id: 'claude-fable-5-1', name: 'Claude Fable 5.1 (most capable)' },

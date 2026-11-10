@@ -9,6 +9,7 @@ import { transcriptOf, isAndroid } from '../lib/speech.js';
 
 // Model + effort right under the message box (like T3 Code), for Claude plan / Claude API.
 const MODELS = [
+  { id: 'claude-fable-5-2', name: 'Fable 5.2' },
   { id: 'claude-fable-5-1', name: 'Fable 5.1' },
   { id: 'claude-opus-5-5', name: 'Opus 5.5' },
   { id: 'claude-sonnet-5-5', name: 'Sonnet 5.5' },
@@ -30,14 +31,16 @@ function ModelPicker() {
   const key = active === 'claude-sub' ? 'claudeSub' : 'anthropic';
   const model = p[key]?.model || 'claude-opus-5-5';
   const effort = p.anthropic?.effort || 'medium';
-  const label = MODELS.find((m) => m.id === model)?.name || model.replace(/^claude-/, '');
+  const extra = useStore((s) => s.planModels || []);
+  const models = [...MODELS, ...extra.filter((m) => !MODELS.some((x) => x.id === m.id))];
+  const label = models.find((m) => m.id === model)?.name || model.replace(/^claude-/, '');
   const pick = (patch) => { saveSettings({ provider: patch }); setOpen(null); };
   return html`<div class="model-picker" ref=${ref}>
     <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'model' ? null : 'model')}><${Icon} name="sparkle" size="sm" />${label}<small>${active === 'claude-sub' ? 'subscription' : 'API key'}</small><${Icon} name="down" size="sm" /></button>
     <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'effort' ? null : 'effort')}><${Icon} name="brain" size="sm" />${(EFFORTS.find(([id]) => id === effort) || [, effort])[1]}<${Icon} name="down" size="sm" /></button>
     ${open === 'model' && html`<div class="topic-menu mp-menu" role="menu">
       <div class="menu-label">Model</div>
-      ${MODELS.map((m) => html`<button role="menuitem" onClick=${() => pick({ [key]: { model: m.id } })}><span class="grow">${m.name}</span>${m.id === model && html`<${Icon} name="check" size="sm" />`}</button>`)}
+      ${models.map((m) => html`<button role="menuitem" onClick=${() => pick({ [key]: { model: m.id } })}><span class="grow">${m.name}</span>${m.id === model && html`<${Icon} name="check" size="sm" />`}</button>`)}
       <hr /><div class="menu-label">Runs on</div>
       <button role="menuitem" onClick=${() => pick({ type: 'claude-sub' })}><span class="grow">Your Claude subscription</span>${active === 'claude-sub' && html`<${Icon} name="check" size="sm" />`}</button>
       ${p.anthropic?.apiKey

@@ -63,3 +63,24 @@ export async function getPlanUsage({ fresh = false } = {}) {
     throw Object.assign(new Error(`Couldn't read your Claude plan usage: ${e.message}`), { status: 502 });
   }
 }
+
+// Models your plan offers, straight from Claude Code (so new ones show up on their own).
+let modelsCache = null;
+export async function getPlanModels() {
+  if (modelsCache && Date.now() - modelsCache.at < 30 * 60_000) return modelsCache.list;
+  const sdk = await import(SDK);
+  const env = { ...process.env };
+  for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
+  const ac = new AbortController();
+  let release; const hold = new Promise((r) => (release = r));
+  async function* input() { await hold; }
+  const q = sdk.query({ prompt: input(), options: { tools: [], settingSources: [], persistSession: false, env, abortController: ac, cwd: '/tmp' } });
+  const timer = setTimeout(() => ac.abort(), 30_000);
+  try {
+    const raw = await q.supportedModels();
+    // Keep full model ids (skip aliases like "opus"/"default"), newest families first as Claude Code lists them.
+    const list = raw.filter((m) => /^claude-/.test(m.value)).map((m) => ({ id: m.value, name: m.displayName }));
+    modelsCache = { at: Date.now(), list };
+    return list;
+  } finally { clearTimeout(timer); release(); ac.abort(); }
+}
