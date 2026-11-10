@@ -4,7 +4,7 @@ import { bus, broadcast } from '../bus.js';
 import { id, log } from '../util.js';
 import { notify } from '../notify.js';
 import { runLoop } from './loop.js';
-import { renderSystemPrompt, TASK_ADDENDUM, CHAT_ADDENDUM } from './prompt.js';
+import { renderSystemPrompt, TASK_ADDENDUM, CHAT_ADDENDUM, SUBAGENT_ADDENDUM } from './prompt.js';
 import { buildContext } from './context.js';
 
 // Background tasks: each one is its own agent loop with its own transcript.
@@ -23,6 +23,19 @@ export function initTasks(h) {
   setTimeout(schedule, 2000);
 }
 
+// Sub-agents: any agent can start one with its own model and effort, wait for it, and get its
+// answer back as a tool result. They show in Tasks so you can watch or open them like any chat.
+const waiters = new Map(); // taskId -> resolve
+function settleWaiter(id, v) { const w = waiters.get(id); if (w) { waiters.delete(id); w(v); } }
+export function runSubagent({ title, prompt, model, effort, parentId, depth = 1 }) {
+  const task = upsertTask({ title: title || prompt.slice(0, 60), goal: prompt, mode: 'subagent', model: model || null, effort: effort || null, parentId: parentId || null, depth, topicId: null, status: 'queued', progress: null, note: `Sub-agent${model ? ` · ${model.replace(/^claude-/, '')}` : ''}${effort ? ` · ${effort}` : ''}`, origin: 'agent' });
+  addTaskStep(task, { kind: 'created', text: prompt });
+  const done = new Promise((resolve) => waiters.set(task.id, resolve));
+  setTimeout(schedule, 10);
+  return { task, done };
+}
+export function cancelSubagent(id) { running.get(id)?.abort.abort(); upsertTask({ id, status: 'cancelled', note: 'Cancelled' }); settleWaiter(id, { ok: false, error: 'cancelled' }); }
+
 // A "chat" is a task that stays open: a separate Duet conversation you talk to directly,
 // running alongside the main thread. Its replies stay in the chat (no report to main).
 export function createChat({ message, title }) {
@@ -33,12 +46,12 @@ export function createChat({ message, title }) {
   return task;
 }
 
-export function createTask({ title, goal, topic, total }, ctx = {}) {
+export function createTask({ title, goal, topic, total, model, effort }, ctx = {}) {
   let tp = null;
   if (topic) tp = upsertTopic({ title: topic, status: 'in_progress' });
   else if (ctx.topicId) tp = db.data.topics.find((t) => t.id === ctx.topicId);
   if (!tp) tp = upsertTopic({ title, status: 'in_progress' });
-  const task = upsertTask({ title, goal, topicId: tp.id, topicTitle: tp.title, status: 'queued', progress: total ? { done: 0, total } : null, note: 'Starting…', origin: ctx.scope || 'user' });
+  const task = upsertTask({ title, goal, topicId: tp.id, topicTitle: tp.title, status: 'queued', progress: total ? { done: 0, total } : null, note: 'Starting…', origin: ctx.scope || 'user', model: model || null, effort: effort || null });
   addTaskStep(task, { kind: 'created', text: goal });
   setTimeout(schedule, 10);
   return { task_id: task.id, status: 'started', note: 'Runs in the background and reports back in this thread.' };
@@ -75,9 +88,10 @@ async function run(task) {
   try {
     const r = await runLoop({
       transcript: task.transcript,
-      system: renderSystemPrompt(chat ? CHAT_ADDENDUM(task) : TASK_ADDENDUM(task)),
+      system: renderSystemPrompt(task.mode === 'subagent' ? SUBAGENT_ADDENDUM(task) : chat ? CHAT_ADDENDUM(task) : TASK_ADDENDUM(task)),
       ctx,
-      effort: s.provider.anthropic.taskEffort || 'high',
+      effort: task.effort || (chat ? s.provider.anthropic.effort : s.provider.anthropic.taskEffort) || 'high',
+      model: task.model || undefined,
       signal: ac.signal,
       onStateChange: (st) => broadcast('task.state', { id: task.id, state: st }),
     });
@@ -86,6 +100,11 @@ async function run(task) {
       const waiting = db.data.approvals.some((a) => a.taskId === task.id && a.status === 'pending');
       if (waiting) {
         upsertTask({ id: task.id, status: 'needs_you', note: 'Waiting for your approval' });
+      } else if (task.mode === 'subagent') {
+        // A sub-agent hands its final answer back to the agent that started it (not to the user).
+        const text = (r.taskText || '').trim();
+        upsertTask({ id: task.id, status: 'done', result: text, note: text.split('\n')[0].slice(0, 200) || 'Done' });
+        settleWaiter(task.id, { ok: true, result: text });
       } else if (chat) {
         // A chat stays open after replying; its text is already in the chat as steps.
         const text = (r.taskText || '').trim();
@@ -101,6 +120,7 @@ async function run(task) {
   } catch (e) {
     log.error(`task ${task.id} failed`, e);
     upsertTask({ id: task.id, status: 'failed', note: e.message });
+    settleWaiter(task.id, { ok: false, error: e.message });
     addTaskStep(task, { kind: 'error', text: e.message });
     notify({ title: task.title, body: `Task failed: ${e.message}`, kind: 'task' });
   } finally {
@@ -130,6 +150,7 @@ export function messageTask({ id: tid, message, action }) {
   } else if (action === 'cancel') {
     running.get(tid)?.abort.abort();
     upsertTask({ id: tid, status: 'cancelled', note: 'Cancelled' });
+    settleWaiter(tid, { ok: false, error: 'cancelled by the user' });
     addTaskStep(t, { kind: 'user', text: 'Cancelled' });
     setTopicStatus(t.topicId, 'done');
   } else if (action === 'resume') {

@@ -34,6 +34,7 @@ export const getState = () => agentState;
 export const hooks = {
   createApproval,
   createTask: tasks.createTask,
+  runSubagent: tasks.runSubagent,
   messageTask: tasks.messageTask,
   updateTask: tasks.updateTask,
   reportToUser: tasks.reportToUser,

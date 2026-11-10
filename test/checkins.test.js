@@ -63,3 +63,12 @@ test('separate chats: POST /api/chats needs a real model; chats stay out of the 
     assert.equal((await s.req('POST', '/api/chats', {})).status, 400);
   } finally { await s.stop(); }
 });
+
+test('sub-agents: every agent can start one with its own model and effort; depth is capped', () => {
+  const main = buildTools({ scope: 'main', hooks: {} }).find((t) => t.name === 'run_subagent');
+  assert.ok(main, 'main agent has run_subagent');
+  assert.ok(main.input_schema.properties.model && main.input_schema.properties.effort);
+  assert.ok(buildTools({ scope: 'task', task: { id: 'k1', depth: 1 }, hooks: {} }).some((t) => t.name === 'run_subagent'), 'tasks can start sub-agents');
+  assert.ok(!buildTools({ scope: 'task', task: { id: 'k2', depth: 3 }, hooks: {} }).some((t) => t.name === 'run_subagent'), 'no endless nesting');
+  assert.ok(buildTools({ scope: 'main', hooks: {} }).find((t) => t.name === 'create_task').input_schema.properties.model);
+});

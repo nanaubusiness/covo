@@ -16,7 +16,8 @@ const MODELS = [
   { id: 'claude-haiku-5-5', name: 'Haiku 5.5' },
 ];
 const EFFORTS = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
-function ModelPicker() {
+function ModelPicker({ taskId }) {
+  const task = useStore((s) => (taskId ? s.tasks.find((x) => x.id === taskId) : null));
   const p = useStore((s) => s.settings?.provider);
   const active = useStore((s) => s.provider);
   const [open, setOpen] = useState(null); // 'model' | 'effort'
@@ -29,17 +30,22 @@ function ModelPicker() {
   }, [open]);
   if (!p || !['claude-sub', 'anthropic'].includes(active)) return null;
   const key = active === 'claude-sub' ? 'claudeSub' : 'anthropic';
-  const model = p[key]?.model || 'claude-opus-5-5';
-  const effort = p.anthropic?.effort || 'medium';
+  // Inside a chat or task, the picker sets that conversation's own model/effort.
+  const model = task?.model || p[key]?.model || 'claude-opus-5-5';
+  const effort = task?.effort || p.anthropic?.effort || 'medium';
   const extra = useStore((s) => s.planModels || []);
   const models = [...MODELS, ...extra.filter((m) => !MODELS.some((x) => x.id === m.id))];
   const label = models.find((m) => m.id === model)?.name || model.replace(/^claude-/, '');
-  const pick = (patch) => { saveSettings({ provider: patch }); setOpen(null); };
+  const pick = (patch) => {
+    if (task && (patch[key]?.model || patch.anthropic?.effort)) api.patch(`/api/tasks/${task.id}`, patch[key]?.model ? { model: patch[key].model } : { effort: patch.anthropic.effort }).catch((e) => toast({ title: e.message }));
+    else saveSettings({ provider: patch });
+    setOpen(null);
+  };
   return html`<div class="model-picker" ref=${ref}>
     <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'model' ? null : 'model')}><${Icon} name="sparkle" size="sm" />${label}<small>${active === 'claude-sub' ? 'subscription' : 'API key'}</small><${Icon} name="down" size="sm" /></button>
     <button class="mp-chip" aria-haspopup="menu" onClick=${() => setOpen(open === 'effort' ? null : 'effort')}><${Icon} name="brain" size="sm" />${(EFFORTS.find(([id]) => id === effort) || [, effort])[1]}<${Icon} name="down" size="sm" /></button>
     ${open === 'model' && html`<div class="topic-menu mp-menu" role="menu">
-      <div class="menu-label">Model</div>
+      <div class="menu-label">${task ? 'Model for this chat' : 'Model'}</div>
       ${models.map((m) => html`<button role="menuitem" onClick=${() => pick({ [key]: { model: m.id } })}><span class="grow">${m.name}</span>${m.id === model && html`<${Icon} name="check" size="sm" />`}</button>`)}
       <hr /><div class="menu-label">Runs on</div>
       <button role="menuitem" onClick=${() => pick({ type: 'claude-sub' })}><span class="grow">Your Claude subscription</span>${active === 'claude-sub' && html`<${Icon} name="check" size="sm" />`}</button>
@@ -47,7 +53,7 @@ function ModelPicker() {
         ? html`<button role="menuitem" onClick=${() => pick({ type: 'anthropic' })}><span class="grow">Anthropic API key</span>${active === 'anthropic' && html`<${Icon} name="check" size="sm" />`}</button>`
         : html`<button role="menuitem" onClick=${() => { setOpen(null); setUI({ settings: 'model' }); }}><span class="grow">Add an API key…</span></button>`}
     </div>`}
-    ${open === 'effort' && html`<div class="topic-menu mp-menu" style="left:96px" role="menu"><div class="menu-label">Effort for chat replies</div>${EFFORTS.map(([id, name]) => html`<button role="menuitem" onClick=${() => pick({ anthropic: { effort: id } })}><span class="grow">${name}</span>${id === effort && html`<${Icon} name="check" size="sm" />`}</button>`)}</div>`}
+    ${open === 'effort' && html`<div class="topic-menu mp-menu" style="left:96px" role="menu"><div class="menu-label">${task ? 'Effort for this chat' : 'Effort for chat replies'}</div>${EFFORTS.map(([id, name]) => html`<button role="menuitem" onClick=${() => pick({ anthropic: { effort: id } })}><span class="grow">${name}</span>${id === effort && html`<${Icon} name="check" size="sm" />`}</button>`)}</div>`}
   </div>`;
 }
 
@@ -67,7 +73,7 @@ export function Suggestions() {
   return html`<div class="suggestions">${list.map((s) => html`<button onClick=${() => sendMessage(s)}>${s}</button>`)}</div>`;
 }
 
-export function Composer({ autoFocus, onSend, placeholder }) {
+export function Composer({ autoFocus, onSend, placeholder, taskId }) {
   const [text, setText] = useState('');
   const [atts, setAtts] = useState([]);
   const [uploading, setUploading] = useState(0);
@@ -189,6 +195,6 @@ export function Composer({ autoFocus, onSend, placeholder }) {
           ? html`<button class="send-btn" aria-label=${t('Stop')} title=${t('Stop')} onClick=${() => api.post('/api/stop')}><${Icon} name="stop" size="sm" /></button>`
           : html`<button class="send-btn" aria-label=${t('Voice mode')} title=${t('Voice mode')} onClick=${() => setUI({ voice: true })}><${Icon} name="wave" size="sm" /></button>`}
     </div>
-    <${ModelPicker} />
+    <${ModelPicker} taskId=${taskId} />
   </div>`;
 }

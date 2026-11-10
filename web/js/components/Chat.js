@@ -64,7 +64,7 @@ export function ChatView({ id, variant = 'm' }) {
       <button class="icon-btn" aria-label=${t('Back to main chat')} title=${t('Main chat')} onClick=${() => setUI({ chat: null })}><${Icon} name="left" /></button>
       <div class="grow" style="min-width:0">
         <b class="chat-title">${task.title}</b>
-        <small class="muted">${isChat(task) ? t('Separate chat') : t('Task')} · ${working ? html`<span class="working-label">${t('Working')}</span>` : task.status === 'needs_you' ? t('Needs you') : task.status === 'idle' ? t('Waiting for you') : t(task.status)}</small>
+        <small class="muted">${isChat(task) ? t('Separate chat') : task.mode === 'subagent' ? t('Sub-agent') : t('Task')}${task.model ? ` · ${task.model.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2')}${task.effort ? ` ${task.effort}` : ''}` : ''} · ${working ? html`<span class="working-label">${t('Working')}</span>` : task.status === 'needs_you' ? t('Needs you') : task.status === 'idle' ? t('Waiting for you') : t(task.status)}</small>
       </div>
       ${working && html`<button class="btn ghost sm" onClick=${() => act('pause')}><${Icon} name="pause" size="sm" />${t('Pause')}</button>`}
       ${task.status === 'paused' && html`<button class="btn ghost sm" onClick=${() => act('resume')}><${Icon} name="play" size="sm" />${t('Resume')}</button>`}
@@ -85,7 +85,7 @@ export function ChatComposer({ id }) {
   const task = useStore((s) => s.tasks.find((x) => x.id === id));
   if (!task) return null;
   const send = (message) => api.post(`/api/tasks/${id}/action`, { message }).catch((e) => toast({ title: 'Not sent', body: e.message }));
-  return html`<${Composer} onSend=${send} placeholder=${isChat(task) ? t('Message this chat') : t('Message this task')} />`;
+  return html`<${Composer} onSend=${send} taskId=${id} placeholder=${isChat(task) ? t('Message this chat') : t('Message this task')} />`;
 }
 
 /* Starting a new parallel Duet */

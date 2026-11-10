@@ -262,6 +262,17 @@ r.post('/api/tasks/:id/action', async (req, res, p) => {
   }
   send(res, 200, core.tasks.messageTask({ id: p.id, message: b.voice ? `${b.message}\n\n${core.VOICE_NOTE}` : b.message, action: b.action }));
 });
+// Per-task / per-chat model and effort (null = use the default).
+r.patch('/api/tasks/:id', async (req, res, p) => {
+  const b = await readJsonBody(req);
+  const t = db.data.tasks.find((x) => x.id === p.id);
+  if (!t) throw err(404, 'Not found');
+  const patch = {};
+  if (b.model !== undefined) patch.model = b.model || null;
+  if (b.effort !== undefined) patch.effort = b.effort || null;
+  if (b.title) patch.title = String(b.title).slice(0, 80);
+  send(res, 200, publicTask(upsertTask({ id: t.id, ...patch })));
+});
 r.delete('/api/tasks/:id', (req, res, p) => { core.tasks.deleteTask(p.id); save(); send(res, 200, { ok: true }); });
 
 /* ───────────── artifacts ───────────── */
