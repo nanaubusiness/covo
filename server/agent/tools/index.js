@@ -21,6 +21,15 @@ const num = (description) => ({ type: 'number', description });
 const bool = (description) => ({ type: 'boolean', description });
 // Models and efforts an agent can pick for the agents it starts.
 const MODEL_IDS = ['claude-fable-5-2', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
+// Accept short names too ("opus", "Fable 5.2", "sonnet-5-5"): newest of each family by default.
+const ALIASES = { fable: 'claude-fable-5-2', opus: 'claude-opus-5-5', sonnet: 'claude-sonnet-5-5', haiku: 'claude-haiku-5-5' };
+export function resolveModel(m) {
+  if (!m) return undefined;
+  const k = String(m).trim().toLowerCase().replace(/^claude[\s-]*/, '').replace(/[\s.]+/g, '-');
+  if (ALIASES[k]) return ALIASES[k];
+  if (/^(fable|opus|sonnet|haiku)-\d/.test(k)) return `claude-${k}`;
+  return /^claude-/.test(String(m)) ? String(m) : undefined;
+}
 const modelProp = { model: str(`Model for it: ${MODEL_IDS.join(', ')} (Fable/Opus for hard reasoning, Sonnet for most work, Haiku for quick simple jobs). Omit to use the default.`) };
 const effortProp = { effort: str('Effort: low | medium | high | xhigh | max. Low for simple lookups, high+ for hard problems. Omit for the default.', { enum: ['low', 'medium', 'high', 'xhigh', 'max'] }) };
 const deviceProp = { device: str('Optional device id or name to run on. Omit to use the default device.') };
@@ -130,7 +139,7 @@ function coreTools(ctx) {
       input_schema: obj({ prompt: str('The complete job: goal, context, constraints, and what to return'), title: str('Short label shown in Tasks'), ...modelProp, ...effortProp }, ['prompt']),
       category: 'auto',
       run: async (i) => {
-        const { task, done } = ctx.hooks.runSubagent({ title: i.title, prompt: i.prompt, model: MODEL_IDS.includes(i.model) || /^claude-/.test(i.model || '') ? i.model : undefined, effort: i.effort, parentId: ctx.task?.id || ctx.scope, depth: depth + 1 });
+        const { task, done } = ctx.hooks.runSubagent({ title: i.title, prompt: i.prompt, model: resolveModel(i.model), effort: i.effort, parentId: ctx.task?.id || ctx.scope, depth: depth + 1 });
         const r = await done;
         return r.ok ? { subagent_id: task.id, model: task.model || 'default', effort: task.effort || 'default', answer: r.result || '(it finished without an answer)' } : { error: `Sub-agent ${task.id} stopped: ${r.error}` };
       },
@@ -141,7 +150,7 @@ function coreTools(ctx) {
         description: 'Start a background task that keeps working after this reply (research, multi-step projects, monitoring). It reports back in this thread and shows in the Tasks tab.',
         input_schema: obj({ title: str('Short task title'), goal: str('Clear goal and definition of done, with all context the worker needs'), topic: str('Topic label to report under (defaults to current topic)'), total: num('Optional number of items/steps, for a progress counter'), ...modelProp, ...effortProp }, ['title', 'goal']),
         category: 'auto',
-        run: async (input) => ctx.hooks.createTask(input, ctx),
+        run: async (input) => ctx.hooks.createTask({ ...input, model: resolveModel(input.model) }, ctx),
       });
       tools.push({
         name: 'message_task',
