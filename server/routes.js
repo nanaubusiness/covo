@@ -13,7 +13,7 @@ import { mcpStatus, reloadMcp } from './mcp.js';
 import { vapidPublicKey, addPushSub, removePushSub, notify } from './notify.js';
 import { emailConfigured } from './email.js';
 import { transcribe, transcribeAvailable } from './transcribe.js';
-import { getPlanUsage } from './planUsage.js';
+import { getPlanUsage, getPlanModels } from './planUsage.js';
 import { speak, speakAvailable } from './speak.js';
 import { renderSystemPrompt, PRESETS, promptTemplate } from './agent/prompt.js';
 import { CATEGORIES } from './agent/policy.js';
@@ -175,6 +175,7 @@ r.patch('/api/topics/:id', async (req, res, p) => {
 });
 
 /* ───────────── Claude plan usage (5-hour / weekly limits) ───────────── */
+r.get('/api/plan-models', async (req, res) => send(res, 200, await getPlanModels().catch(() => [])));
 r.get('/api/plan-usage', async (req, res) => {
   const fresh = new URL(req.url, 'http://x').searchParams.get('fresh') === '1';
   send(res, 200, await getPlanUsage({ fresh }));

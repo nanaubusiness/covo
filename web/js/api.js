@@ -63,6 +63,7 @@ export const api = {
       categories: b.categories, presets: b.presets, server: b.server, integrations: b.integrations || {}, boot: 'ready',
     });
     if (b.settings?.agent?.name) document.title = b.settings.agent.name; // window/tab title follows the agent's name
+    if (b.provider === 'claude-sub' && !transport?.local) api.get('/api/plan-models').then((m) => set({ planModels: m })).catch(() => {});
     return b;
   },
 
