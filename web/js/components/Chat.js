@@ -37,6 +37,7 @@ export function ChatList({ onPick }) {
 
 function Step({ s }) {
   if (s.kind === 'user') return html`<div class="msg me"><div class="bubble me" dir="auto">${s.text}</div></div>`;
+  if (s.kind === 'followup') return html`<div class="msg me"><span class="meta-time">Follow-up from the agent that started it</span><div class="bubble me" dir="auto">${s.text}</div></div>`;
   if (s.kind === 'assistant' || s.kind === 'report') {
     return html`<div class="msg">${splitBubbles(s.text).map((p) => html`<div dir="auto" class="bubble ai" dangerouslySetInnerHTML=${{ __html: renderMarkdown(p) }}></div>`)}
       ${s.kind === 'report' && html`<span class="meta-time">Also posted in the main chat</span>`}</div>`;

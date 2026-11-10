@@ -25,14 +25,30 @@ export function initTasks(h) {
 
 // Sub-agents: any agent can start one with its own model and effort, wait for it, and get its
 // answer back as a tool result. They show in Tasks so you can watch or open them like any chat.
-const waiters = new Map(); // taskId -> resolve
-function settleWaiter(id, v) { const w = waiters.get(id); if (w) { waiters.delete(id); w(v); } }
+const waiters = new Map(); // taskId -> [resolve] (the agent that started it, plus any follow-ups waiting)
+function settleWaiter(id, v) { const w = waiters.get(id); if (w) { waiters.delete(id); for (const f of w) f(v); } }
+const waitFor = (id) => new Promise((resolve) => (waiters.get(id) || waiters.set(id, []).get(id)).push(resolve));
 export function runSubagent({ title, prompt, model, effort, parentId, depth = 1 }) {
   const task = upsertTask({ title: title || prompt.slice(0, 60), goal: prompt, mode: 'subagent', model: model || null, effort: effort || null, parentId: parentId || null, depth, topicId: null, status: 'queued', progress: null, note: `Sub-agent${model ? ` · ${model.replace(/^claude-/, '')}` : ''}${effort ? ` · ${effort}` : ''}`, origin: 'agent' });
   addTaskStep(task, { kind: 'created', text: prompt });
-  const done = new Promise((resolve) => waiters.set(task.id, resolve));
+  const done = waitFor(task.id);
   setTimeout(schedule, 10);
   return { task, done };
+}
+
+// Follow-ups: send a sub-agent more instructions after (or while) it works. It keeps its whole
+// conversation (and its cached Claude session), answers the follow-up, and the new answer comes
+// back to whoever sent it.
+export function followUpSubagent({ id: sid, message }) {
+  const t = db.data.tasks.find((x) => x.id === sid);
+  if (!t || t.mode !== 'subagent') return { error: `No sub-agent with id ${sid}` };
+  if (!message?.trim()) return { error: 'message is required' };
+  const done = waitFor(sid);
+  (inbox.get(sid) || inbox.set(sid, []).get(sid)).push({ text: `Follow-up from the agent that started you. Answer it, building on your earlier work, and end with your updated answer: ${message}` });
+  addTaskStep(t, { kind: 'followup', text: message });
+  if (!running.has(sid)) upsertTask({ id: sid, status: 'queued', note: 'Follow-up…' });
+  setTimeout(schedule, 10);
+  return { task: t, done };
 }
 export function cancelSubagent(id) { running.get(id)?.abort.abort(); upsertTask({ id, status: 'cancelled', note: 'Cancelled' }); settleWaiter(id, { ok: false, error: 'cancelled' }); }
 

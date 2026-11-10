@@ -70,5 +70,20 @@ test('sub-agents: every agent can start one with its own model and effort; depth
   assert.ok(main.input_schema.properties.model && main.input_schema.properties.effort);
   assert.ok(buildTools({ scope: 'task', task: { id: 'k1', depth: 1 }, hooks: {} }).some((t) => t.name === 'run_subagent'), 'tasks can start sub-agents');
   assert.ok(!buildTools({ scope: 'task', task: { id: 'k2', depth: 3 }, hooks: {} }).some((t) => t.name === 'run_subagent'), 'no endless nesting');
+  assert.ok(buildTools({ scope: 'main', hooks: {} }).some((t) => t.name === 'follow_up_subagent'), 'main agent can follow up with sub-agents');
   assert.ok(buildTools({ scope: 'main', hooks: {} }).find((t) => t.name === 'create_task').input_schema.properties.model);
+});
+
+test('follow-ups reopen a finished sub-agent and resolve with its next answer', async () => {
+  const tasks = await import('../server/agent/tasks.js');
+  const { db, upsertTask } = await import('../server/db.js');
+  const t = upsertTask({ title: 'fu', goal: 'x', mode: 'subagent', status: 'done', transcript: [], steps: [], demo: true });
+  assert.ok(tasks.followUpSubagent({ id: 'nope', message: 'hi' }).error, 'unknown id is an error');
+  const f = tasks.followUpSubagent({ id: t.id, message: 'now do part 2' });
+  assert.equal(f.task.id, t.id);
+  const cur = db.data.tasks.find((x) => x.id === t.id);
+  assert.equal(cur.status, 'queued', 'sub-agent is queued to answer the follow-up');
+  assert.ok((cur.steps || []).some((s) => s.kind === 'followup' && s.text === 'now do part 2'), 'follow-up shows in its chat');
+  tasks.cancelSubagent(t.id);
+  assert.deepEqual(await f.done, { ok: false, error: 'cancelled' });
 });
