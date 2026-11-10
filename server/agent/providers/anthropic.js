@@ -27,10 +27,10 @@ const FALLBACK_OK = /^claude-(fable-5-1|opus-5-5|opus-5$|opus-5-|sonnet-5-5)/;
 
 let degraded = false; // set when the API rejects beta features; we retry without them
 
-function buildParams({ system, messages, tools, effort, maxTokens }) {
+function buildParams({ system, messages, tools, effort, maxTokens, model: modelOverride }) {
   const s = getSettings();
   const a = s.provider.anthropic;
-  const model = a.model || 'claude-opus-5-5';
+  const model = modelOverride || a.model || 'claude-opus-5-5';
   const modern = MODERN.test(model);
   const params = {
     model,
@@ -64,10 +64,10 @@ function buildParams({ system, messages, tools, effort, maxTokens }) {
 }
 
 // One model call. Streams text + progress notes, returns the final assistant message.
-export async function anthropicTurn({ system, messages, tools, effort, maxTokens, signal, onText, onProgress, onBlockStart }) {
+export async function anthropicTurn({ system, messages, tools, effort, maxTokens, model, signal, onText, onProgress, onBlockStart }) {
   const c = getClient();
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { params, betas } = buildParams({ system, messages, tools, effort, maxTokens });
+    const { params, betas } = buildParams({ system, messages, tools, effort, maxTokens, model });
     try {
       const stream = betas.length
         ? c.beta.messages.stream({ ...params, betas }, { signal })

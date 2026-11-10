@@ -181,7 +181,7 @@ export function planTurn(key, messages, store = sessionStore()) {
 }
 
 // One model call, same contract as anthropicTurn().
-export async function claudeSubTurn({ system, messages, tools, effort, signal, onText, onBlockStart, convKey }) {
+export async function claudeSubTurn({ system, messages, tools, effort, model: modelOverride, signal, onText, onBlockStart, convKey }) {
   const { sdk, z } = await load();
   const c = cfg();
 
@@ -196,13 +196,15 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
   });
 
   const web = c.webSearch !== false;
+  let markReplyDone;
+  let replyDone = new Promise((r) => (markReplyDone = r));
   const abort = new AbortController();
   const onAbort = () => abort.abort();
   if (signal) { if (signal.aborted) abort.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
 
   const options = {
     systemPrompt: system + REPLAY_RULES,
-    model: c.model || 'claude-opus-5-5',
+    model: modelOverride || c.model || 'claude-opus-5-5',
     ...(effort ? { effort } : {}),
     // No Bash/Read/Edit. Only Claude Code's own web search + page reader (they run inside
     // Claude Code on your plan) and Covo's tools.
@@ -217,9 +219,13 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
     permissionMode: 'default',
     // Web search/fetch run in Claude Code. Every Covo tool call is handed back to Covo:
     // stop the Claude Code turn there.
-    canUseTool: async (name) => (web && WEB_TOOLS.includes(name)
-      ? { behavior: 'allow' }
-      : { behavior: 'deny', message: 'Covo runs this tool itself. Its result arrives in the next message.', interrupt: true }),
+    // Wait for the whole reply before stopping, so parallel tool calls in one reply all reach Covo
+    // (Claude Code asks about the first call while the rest are still streaming).
+    canUseTool: async (name) => {
+      if (web && WEB_TOOLS.includes(name)) return { behavior: 'allow' };
+      await Promise.race([replyDone, new Promise((r) => setTimeout(r, 120_000))]);
+      return { behavior: 'deny', message: 'Covo runs this tool itself. Its result arrives in the next message.', interrupt: true };
+    },
     cwd: workDir(),
     env: childEnv(),
     abortController: abort,
@@ -243,9 +249,11 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
       if (ev.session_id) sessionId = ev.session_id;
       if (ev.type === 'stream_event') {
         const e = ev.event;
+        if (e.type === 'message_stop' || (e.type === 'message_delta' && e.delta?.stop_reason)) markReplyDone();
         if (e.type === 'content_block_start') onBlockStart?.(e.content_block);
         else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') onText?.(e.delta.text);
       } else if (ev.type === 'assistant') {
+        if (ev.message?.stop_reason) markReplyDone();
         // Several model responses can happen inside one turn when Claude searches the web first;
         // keep their text, drop the internal web tool calls, and hand Covo tool calls back.
         const msg = ev.message;
@@ -267,7 +275,7 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
     if (signal?.aborted) { const err = new Error('aborted'); err.name = 'AbortError'; throw err; }
     if (!content.length && plan.resume) { // the old session is gone or broken: start over once
       forgetSession(convKey);
-      return claudeSubTurn({ system, messages, tools, effort, signal, onText, onBlockStart, convKey });
+      return claudeSubTurn({ system, messages, tools, effort, model: modelOverride, signal, onText, onBlockStart, convKey });
     }
     if (!content.length) throw new Error(friendly(e.message));
   } finally {
@@ -275,7 +283,7 @@ export async function claudeSubTurn({ system, messages, tools, effort, signal, o
   }
 
   if (signal?.aborted) { const err = new Error('aborted'); err.name = 'AbortError'; throw err; }
-  if (!content.length && failure && plan.resume) { forgetSession(convKey); return claudeSubTurn({ system, messages, tools, effort, signal, onText, onBlockStart, convKey }); }
+  if (!content.length && failure && plan.resume) { forgetSession(convKey); return claudeSubTurn({ system, messages, tools, effort, model: modelOverride, signal, onText, onBlockStart, convKey }); }
   if (!content.length && failure) throw new Error(friendly(typeof failure === 'string' ? failure : JSON.stringify(failure)));
   // Remember where this conversation's session is; the reply we return becomes messages[n].
   if (convKey && sessionId) { sessionStore()[convKey] = { sessionId, n: messages.length, hash: hashOf(messages), at: Date.now() }; saveSessions(); }

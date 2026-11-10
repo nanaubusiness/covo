@@ -19,6 +19,10 @@ const obj = (properties, required = []) => ({ type: 'object', properties, requir
 const str = (description, extra = {}) => ({ type: 'string', description, ...extra });
 const num = (description) => ({ type: 'number', description });
 const bool = (description) => ({ type: 'boolean', description });
+// Models and efforts an agent can pick for the agents it starts.
+const MODEL_IDS = ['claude-fable-5-2', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
+const modelProp = { model: str(`Model for it: ${MODEL_IDS.join(', ')} (Fable/Opus for hard reasoning, Sonnet for most work, Haiku for quick simple jobs). Omit to use the default.`) };
+const effortProp = { effort: str('Effort: low | medium | high | xhigh | max. Low for simple lookups, high+ for hard problems. Omit for the default.', { enum: ['low', 'medium', 'high', 'xhigh', 'max'] }) };
 const deviceProp = { device: str('Optional device id or name to run on. Omit to use the default device.') };
 
 function coreTools(ctx) {
@@ -119,11 +123,23 @@ function coreTools(ctx) {
   }
 
   if (b.tasks) {
+    const depth = ctx.task?.depth || 0;
+    if (depth < 3) tools.push({
+      name: 'run_subagent',
+      description: 'Hand a focused job to a sub-agent and get its answer back as this tool\'s result. Pick its model and effort to fit the job. Call several in one reply to run them in parallel. It has the same tools as you (web, computer, files, connected apps), starts with no memory of this conversation, so put everything it needs in the prompt.',
+      input_schema: obj({ prompt: str('The complete job: goal, context, constraints, and what to return'), title: str('Short label shown in Tasks'), ...modelProp, ...effortProp }, ['prompt']),
+      category: 'auto',
+      run: async (i) => {
+        const { task, done } = ctx.hooks.runSubagent({ title: i.title, prompt: i.prompt, model: MODEL_IDS.includes(i.model) || /^claude-/.test(i.model || '') ? i.model : undefined, effort: i.effort, parentId: ctx.task?.id || ctx.scope, depth: depth + 1 });
+        const r = await done;
+        return r.ok ? { subagent_id: task.id, model: task.model || 'default', effort: task.effort || 'default', answer: r.result || '(it finished without an answer)' } : { error: `Sub-agent ${task.id} stopped: ${r.error}` };
+      },
+    });
     if (ctx.scope === 'main') {
       tools.push({
         name: 'create_task',
         description: 'Start a background task that keeps working after this reply (research, multi-step projects, monitoring). It reports back in this thread and shows in the Tasks tab.',
-        input_schema: obj({ title: str('Short task title'), goal: str('Clear goal and definition of done, with all context the worker needs'), topic: str('Topic label to report under (defaults to current topic)'), total: num('Optional number of items/steps, for a progress counter') }, ['title', 'goal']),
+        input_schema: obj({ title: str('Short task title'), goal: str('Clear goal and definition of done, with all context the worker needs'), topic: str('Topic label to report under (defaults to current topic)'), total: num('Optional number of items/steps, for a progress counter'), ...modelProp, ...effortProp }, ['title', 'goal']),
         category: 'auto',
         run: async (input) => ctx.hooks.createTask(input, ctx),
       });

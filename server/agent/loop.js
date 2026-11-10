@@ -68,7 +68,7 @@ async function callModel(args) {
   throw new Error('No model configured');
 }
 
-export async function runLoop({ transcript, system, ctx, effort, signal, onStateChange }) {
+export async function runLoop({ transcript, system, ctx, effort, model, signal, onStateChange }) {
   const s = getSettings();
   // No step cap: the agent works until it's done (Stop in the app still ends a run).
   const maxSteps = Number(s.agent.maxSteps) > 0 ? Number(s.agent.maxSteps) : Infinity;
@@ -90,6 +90,7 @@ export async function runLoop({ transcript, system, ctx, effort, signal, onState
     let result;
     try {
       result = await callModel({
+        model,
         system,
         // Claude plan: the whole history goes to one long-lived Claude Code session, which compacts it
         // itself when needed. Other providers keep an optional window.
