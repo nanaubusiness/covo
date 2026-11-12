@@ -114,7 +114,7 @@ function App() {
   if (s.settings) setLang(s.settings.profile?.language || 'en'); // before rendering children
   useEffect(() => { if (s.settings) { applyAppearance(s.settings.appearance, s.settings.profile); computeLayout(); } }, [s.settings]);
 
-  if (s.boot === 'loading') return html`<div class="auth"><${Orb} state="thinking" /></div>`;
+  if (s.boot === 'loading') return html`<div class="auth"><${Orb} state="thinking" />${s.bootNote && html`<p class="lead" style="margin-top:16px">${s.bootNote}</p>`}</div>`;
   if (s.boot === 'error') return html`<div class="auth"><div class="auth-card"><h1 style="font-size:var(--fs-2xl)">Can't reach the server</h1><p class="lead">${s.error}</p><button class="btn primary" onClick=${() => location.reload()}>${t('Retry')}</button></div></div>`;
   if (s.boot === 'setup') return html`<${Setup} /><${LegalSheet} />`;
   if (s.boot === 'login') return html`<${Login} appName=${s.appName} /><${LegalSheet} />`;
@@ -150,6 +150,28 @@ window.addEventListener('keydown', (e) => {
 });
 
 /* ───────────── boot ───────────── */
+// Phones reaching the server over Tailscale (or any VPN): push notifications arrive over the
+// internet, but opening the app needs the tunnel, which often wakes a few seconds after launch.
+// Keep retrying network failures for a while instead of failing on the first attempt.
+// HTTP errors (401, 500…) are real answers from the server and are not retried.
+async function waitForServer(fn, totalMs = 45000) {
+  const end = Date.now() + totalMs;
+  for (let delay = 600; ; delay = Math.min(delay * 1.6, 4000)) {
+    try {
+      return await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('Timed out')), 8000))]);
+    } catch (e) {
+      if (e.status || Date.now() + delay >= end) throw e;
+      set({ bootNote: t('Connecting to your server…') });
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
+// If we did end up on the error screen, try again as soon as the phone is back online or the app is reopened.
+const retryIfFailed = () => { if (get().boot === 'error' && document.visibilityState === 'visible') location.reload(); };
+window.addEventListener('online', retryIfFailed);
+document.addEventListener('visibilitychange', retryIfFailed);
+
 export async function boot() {
   installNativeLinks();
   render(html`<${App} />`, document.getElementById('app'));
@@ -160,7 +182,7 @@ export async function boot() {
       if (await maybeOpenServer()) return;
       useTransport(await localTransport());
     }
-    const st = await api.get('/api/auth/status');
+    const st = await waitForServer(() => api.get('/api/auth/status'));
     set({ appName: st.appName });
     // Desktop app: the window signs itself in (desktop/main.cjs).
     if (window.covoDesktop && !st.desktop) return window.covoDesktop.signIn();

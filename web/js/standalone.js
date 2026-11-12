@@ -92,12 +92,19 @@ export async function maybeOpenServer() {
   // A build can ship with a default server (COVO_DEFAULT_SERVER), e.g. your own always-on Mac.
   const saved = localStorage.getItem(SERVER_KEY) || window.COVO_DEFAULT_SERVER || '';
   if (!saved) return false;
-  try {
-    await Promise.race([fetch(saved.replace(/\/$/, '') + '/api/auth/status', { mode: 'no-cors' }), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]);
-    location.replace(saved);
-    return true;
-  } catch {
-    sessionStorage.setItem('covo:serverUnreachable', saved);
-    return false;
+  // Over Tailscale/VPN the tunnel can take several seconds to wake after the app opens,
+  // so retry for a while before falling back to the local edition.
+  const end = Date.now() + 30000;
+  for (let delay = 600; ; delay = Math.min(delay * 1.6, 4000)) {
+    try {
+      await Promise.race([fetch(saved.replace(/\/$/, '') + '/api/auth/status', { mode: 'no-cors', cache: 'no-store' }), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))]);
+      location.replace(saved);
+      return true;
+    } catch {
+      if (Date.now() + delay >= end) break;
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
+  sessionStorage.setItem('covo:serverUnreachable', saved);
+  return false;
 }

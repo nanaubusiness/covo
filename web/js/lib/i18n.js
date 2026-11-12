@@ -23,6 +23,7 @@ const AR = {
   'Good morning': 'صباح الخير', 'Good afternoon': 'مساء الخير', 'Good evening': 'مساء الخير',
   'Ask {name} anything, or give it a job.': 'اسأل {name} أي شيء، أو كلّفه بمهمة.',
   'Overview': 'نظرة عامة', 'Waiting for approval': 'بانتظار الموافقة', 'Recent': 'الأحدث', 'Clear filter': 'إلغاء التصفية',
+  'Connecting to your server…': 'جارٍ الاتصال بالخادم…',
 };
 
 const DICTS = { en: {}, ar: AR };
